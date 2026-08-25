@@ -1,0 +1,38 @@
+name: Sanitized bug report
+description: Report a JP ADMIN problem without credentials or student data.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: checkboxes
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed tokens, keys, student data, Sheet exports, and private Discord screenshots.
+          required: true
+  - type: dropdown
+    attributes:
+      label: Area
+      options:
+        - Setup / Render
+        - Discord permissions
+        - Apps Script / Google Sheet
+        - Attendance
+        - Job tracking
+        - Leave
+        - Reports / schedules
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Use placeholder IDs and sanitized messages.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Safe diagnostics
+      description: Paste only sanitized `!doctor <check>` text. Never paste secrets or student contact data.
+  - type: textarea
+    attributes:
+      label: Steps to reproduce

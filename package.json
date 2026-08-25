@@ -1,0 +1,18 @@
+﻿{
+    "name":  "jp-admin-self-hosted",
+    "version":  "2.0.0",
+    "main":  "index.js",
+    "scripts":  {
+                    "start":  "node index.js",
+                    "test":  "node scripts/run-installer-tests.js",
+                    "test:installer":  "node scripts/run-installer-tests.js",
+                    "docs:commands":  "node scripts/build-command-reference.js",
+                    "package:share":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-share-package.ps1"
+                },
+    "license":  "MIT",
+    "dependencies":  {
+                         "discord.js":  "^14.26.4",
+                         "dotenv":  "^16.4.5",
+                         "node-cron":  "^3.0.3"
+                     }
+}

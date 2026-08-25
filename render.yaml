@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: jp-admin-self-hosted
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: JP_INSTALLER_MODE
+        value: "true"
+      - key: COHORT_API_URL
+        value: https://script.google.com/macros/s/PASTE_AFTER_DEPLOY/exec
+      - key: COHORT_API_KEY
+        generateValue: true
+      - key: COHORT_TIMEZONE
+        value: Asia/Dhaka
+      - key: BOT_ACTIVE_WINDOW
+        value: 00:00-23:59
+      - key: BOT_ACTIVE_TIMEZONE
+        value: Asia/Dhaka
