@@ -3,9 +3,11 @@ const assert = require('node:assert/strict');
 
 const {
   DEFAULT_RETRY_ATTEMPTS,
+  REMOTE_COMPLETION_GRACE_MS,
   RETRY_DELAYS_MS,
   appsScriptGet,
   appsScriptPost,
+  retryDelayFor,
 } = require('./apps-script-api');
 
 const cohort = {
@@ -40,13 +42,80 @@ test('GET does not retry a JSON application error', async () => {
   let calls = 0;
   await assert.rejects(
     appsScriptGet(cohort, { action: 'health' }, {
-      fetchImpl: async () => { calls++; return response(200, JSON.stringify({ error: 'unauthorized' })); },
+      fetchImpl: async () => { calls++; return response(200, JSON.stringify({ error: 'unknown action' })); },
       sleepImpl: async () => {},
       label: 'Health check',
     }),
-    /unauthorized/,
+    /unknown action/,
   );
   assert.equal(calls, 1);
+});
+
+test('safe requests confirm one isolated authorization rejection', async () => {
+  const replies = [
+    response(200, JSON.stringify({ error: 'unauthorized' })),
+    response(200, JSON.stringify({ ok: true })),
+  ];
+  const delays = [];
+  let calls = 0;
+  const result = await appsScriptPost(cohort, { action: 'logOutreach', messageId: '123' }, {
+    idempotent: true,
+    fetchImpl: async () => replies[calls++],
+    sleepImpl: async delay => { delays.push(delay); },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [RETRY_DELAYS_MS[0]]);
+});
+
+test('persistent authorization rejection stops after the confirmation attempt', async () => {
+  let calls = 0;
+  await assert.rejects(
+    appsScriptGet(cohort, { action: 'health' }, {
+      fetchImpl: async () => { calls++; return response(200, JSON.stringify({ error: 'unauthorized' })); },
+      sleepImpl: async () => {},
+    }),
+    /unauthorized.*after 2 attempts/,
+  );
+  assert.equal(calls, 2);
+});
+
+test('idempotent writes retry transient Apps Script lock errors with a completion grace', async () => {
+  const replies = [
+    response(200, JSON.stringify({ error: 'AppsScript: Exception: Lock timeout: another process was holding the lock for too long.' })),
+    response(200, JSON.stringify({ saved: 1 })),
+  ];
+  const delays = [];
+  let calls = 0;
+  const result = await appsScriptPost(cohort, { action: 'backfillOutreachDaily' }, {
+    idempotent: true,
+    fetchImpl: async () => replies[calls++],
+    sleepImpl: async delay => { delays.push(delay); },
+  });
+  assert.equal(result.saved, 1);
+  assert.equal(calls, 2);
+  assert.deepEqual(delays, [REMOTE_COMPLETION_GRACE_MS]);
+});
+
+test('non-idempotent writes never retry an Apps Script lock error', async () => {
+  let calls = 0;
+  await assert.rejects(
+    appsScriptPost(cohort, { action: 'createForms' }, {
+      fetchImpl: async () => {
+        calls++;
+        return response(200, JSON.stringify({ error: 'AppsScript: Exception: Lock timeout' }));
+      },
+      sleepImpl: async () => {},
+    }),
+    /Lock timeout/,
+  );
+  assert.equal(calls, 1);
+});
+
+test('timeout retries wait for the remote Apps Script execution to finish', () => {
+  const error = new Error('timed out');
+  error.name = 'TimeoutError';
+  assert.equal(retryDelayFor(error, 1), REMOTE_COMPLETION_GRACE_MS);
 });
 
 test('POST retries only when explicitly marked idempotent', async () => {

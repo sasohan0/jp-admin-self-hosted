@@ -194,7 +194,7 @@ checked during changes.
 | --- | --- | --- |
 | Configuration | `config.js`, `discover.js`, `channel-names.js` | Cohorts, channels, schedules/defaults, template matching |
 | Identity | `roster.js`, `discord-members.js`, `sync-command.js`, `missing.js`, `exclude.js`, `student-access.js` | Discord ↔ Sheet member mapping, eligibility, mutually exclusive status roles, and role/channel access rules |
-| External APIs | `groq.js`, `apps-script-api.js`, feature modules | AI queue/key rotation plus bounded, secret-safe Sheet Web App calls with five-attempt transient HTML/404 retry and cache-busted retry URLs |
+| External APIs | `groq.js`, `apps-script-api.js`, feature modules | AI queue/key rotation plus bounded, secret-safe Sheet Web App calls; reads/idempotent writes retry transient edge, network, timeout, and Apps Script lock failures, use a remote-completion grace after timeouts/locks, and confirm an isolated authentication rejection once |
 | Runtime control | `automations.js`, `settings.js`, `scheduler.js`, `runtime-schedule.js`, `control-center.js`, `help.js`, `state.js` | Persistent switches, targets, editable local clock times, day schedules, private overview, searchable command catalog, warm-up |
 | Reporting/health | `reporter.js`, `doctor.js`, `perms.js`, `keepalive.js` | Activity logging, diagnostics, permissions, Render health |
 | Pure logic | `job-tracker.js`, `message-chunks.js`, `onboarding-groups.js`, `dawn-attendance.js`, `channel-names.js`, `forwarder-route.js` | Testable parsing/distribution/normalization without Discord |
@@ -353,7 +353,11 @@ rows and schemas without deleting activity history.
 `activity-reconciliation.js` runs one bounded, silent interview/outreach
 history repair at the configurable default 22:50 on every calendar day. It is
 separate from public reports, workday/holiday decisions, and feature switches;
-message IDs make repeated weekend and restart recovery safe.
+message IDs make repeated weekend and restart recovery safe. Manual and silent
+activity backfills default to three cohort calendar days and stop pagination at
+the first older message; supervisors may request 1-30 days explicitly. Outreach
+history is sent to Apps Script in batches of 25 so each locked execution remains
+well below the long-request timeout and does not create a retry/lock collision.
 `activity-automation.js` adds cohort-local Sun–Thu templates and evidence-based
 follow-up. Its automatic consecutive-attendance warning runs every working day;
 the two-working-day application escalation runs Monday and Wednesday, while manual

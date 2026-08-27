@@ -106,10 +106,10 @@ const SECTIONS = [
     ['!setupcohortsheet fresh confirm [URL]', 'Prepare an empty-history new-cohort workbook with clean formatting'],
   ]],
   ['📣 Outreach & jobs', [
-    ['!backfilloutreach', 'Idempotently import outreach history and daily message events into the Sheet'],
-    ['!backfillinterviews', 'Idempotently import interview-channel history into Interview_Log and rebuild Interview Updates'],
+    ['!backfilloutreach [N days]', 'Reconcile recent outreach messages; defaults to 3 calendar days, accepts 1-30, and preserves older events'],
+    ['!backfillinterviews [N days]', 'Reconcile recent interview messages; defaults to 3 calendar days, accepts 1-30, and preserves older events'],
     ['!outreachcheck', 'Run the scheduled outreach follow-up report now'],
-    ['!backfilljobsheets', 'Import tracker links from channel history'],
+    ['!backfilljobsheets [N days]', 'Import recent tracker links; defaults to 3 calendar days and accepts 1-30'],
     ['!jobscheck', 'Run the exhaustive jobs check now; every active student is listed'],
     ['!checkjobsheets [YYYY-MM-DD]', 'Deep private tracker audit across public tabs; keeps contacts private, never pings/writes'],
     ['!activityprompt outreach|interview|communication|all', 'Post one or all daily @everyone activity templates now'],

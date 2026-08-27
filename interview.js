@@ -11,6 +11,12 @@ const { parseInterviewAnnouncements } = require('./interview-parser');
 const { appsScriptPost } = require('./apps-script-api');
 const { resolveChannel } = require('./settings');
 const { runQuotaTask } = require('./quota-queue');
+const {
+  historyWindow,
+  historyWindowLabel,
+  messageWindowPosition,
+  parseHistoryCommand,
+} = require('./history-window');
 
 const messageQueues = new Map();
 const completedSignatures = new Map();
@@ -207,30 +213,37 @@ async function processInterviewMessage(msg) {
   });
 }
 
-async function fetchInterviewHistory(channel, maxMessages) {
+async function fetchInterviewHistory(channel, maxMessages, window) {
   const messages = [];
   let before = '';
+  let reachedBeforeWindow = false;
   while (messages.length < maxMessages) {
     const limit = Math.min(100, maxMessages - messages.length);
     const batch = await channel.messages.fetch({ limit, ...(before ? { before } : {}) });
     if (!batch.size) break;
-    messages.push(...batch.values());
+    for (const message of batch.values()) {
+      const position = messageWindowPosition(message, window);
+      if (position < 0) { reachedBeforeWindow = true; continue; }
+      if (position === 0) messages.push(message);
+    }
     before = batch.last().id;
-    if (batch.size < limit) break;
+    if (reachedBeforeWindow || batch.size < limit) break;
   }
   return messages;
 }
 
 async function backfillInterviewHistory(client, cohort, options = {}) {
   const maxMessages = Math.min(10000, Math.max(1, Number(options.maxMessages) || 10000));
-  const channelId = await resolveChannel(
+  const window = historyWindow(options.days, cohort.timezone, options.nowMs);
+  const write = options.post || postBackend;
+  const channelId = options.channel ? '' : await resolveChannel(
     cohort, 'channel_interview', cohort.channels.interviewUpdates);
-  const channel = await client.channels.fetch(channelId);
+  const channel = options.channel || await client.channels.fetch(channelId);
   if (!channel?.isTextBased()) throw new Error('configured interview-update channel is not readable');
 
   const rosterState = options.rosterState || await rosterForBackfill(client, cohort);
   const byId = new Map(rosterState.roster.map(student => [student.discordId, student]));
-  const messages = await fetchInterviewHistory(channel, maxMessages);
+  const messages = await fetchInterviewHistory(channel, maxMessages, window);
   const entries = [];
   let skippedMembers = 0;
   let unrecognized = 0;
@@ -262,20 +275,24 @@ async function backfillInterviewHistory(client, cohort, options = {}) {
   let created = 0;
   let updated = 0;
   let duplicates = 0;
-  for (let index = 0; index < entries.length; index += 100) {
-    const result = await postBackend(cohort, {
-      action: 'backfillInterviews',
+  // Use the existing per-message idempotent action so a selected recent
+  // window can update only its own source-message rows and matrix dates. The
+  // legacy bulk repair action rebuilds/renumbers the full historical matrix,
+  // which would violate the command's promise not to touch older records.
+  for (const entry of entries) {
+    const result = await write(cohort, {
+      action: 'logInterviews',
       guildId: cohort.guildId,
-      entries: entries.slice(index, index + 100),
+      email: entry.email,
+      name: entry.name,
+      date: entry.date,
+      messageId: entry.messageId,
+      messageUrl: entry.messageUrl,
+      interviews: entry.interviews,
     });
     created += Number(result.created) || 0;
     updated += Number(result.updated) || 0;
     duplicates += Number(result.duplicates) || 0;
-  }
-  if (!entries.length) {
-    // Rebuild the matrix even when no parseable history was found. This repairs
-    // missing count columns from the existing authoritative Interview_Log.
-    await postBackend(cohort, { action: 'repairInterviewDuplicates', guildId: cohort.guildId });
   }
   return {
     messages: messages.length,
@@ -286,6 +303,7 @@ async function backfillInterviewHistory(client, cohort, options = {}) {
     skippedMembers,
     unrecognized,
     rosterRefreshed: rosterState.refreshed,
+    window,
   };
 }
 
@@ -321,16 +339,22 @@ module.exports = function registerInterview(client) {
   client.on('messageCreate', async msg => {
     const cohort = cohorts.find(candidate => candidate.guildId === msg.guildId);
     const command = msg.content.trim().toLowerCase();
-    if (!msg.author.bot && command === '!backfillinterviews' && cohort &&
+    const backfillCommand = parseHistoryCommand(command, '!backfillinterviews');
+    if (!msg.author.bot && backfillCommand && cohort &&
         cohort.supervisorIds.includes(msg.author.id) && msg.channelId === cohort.channels.supervisor) {
-      await msg.reply({ content: '⏳ Reconciling interview-update history into Interview_Log and Interview Updates…', allowedMentions: { parse: [] } });
+      if (backfillCommand.error) {
+        await msg.reply({ content: backfillCommand.error, allowedMentions: { parse: [] } });
+        return;
+      }
+      const window = historyWindow(backfillCommand.days, cohort.timezone);
+      await msg.reply({ content: `⏳ Reconciling interview messages from the last **${historyWindowLabel(window)}**…`, allowedMentions: { parse: [] } });
       try {
         const result = await runQuotaTask(
           `interview-backfill:${cohort.guildId}`,
-          () => backfillInterviewHistory(client, cohort),
+          () => backfillInterviewHistory(client, cohort, { days: backfillCommand.days }),
         );
         await msg.reply({
-          content: `✅ Interview backfill complete: **${result.messages}** messages scanned · **${result.recognized}** student updates recognized · **${result.created}** event(s) added · **${result.updated}** repaired · **${result.duplicates}** already present · **${result.unrecognized}** non-interview/unrecognized student messages skipped.`,
+          content: `✅ Interview backfill complete for **${historyWindowLabel(result.window)}**: **${result.messages}** messages scanned · **${result.recognized}** student updates recognized · **${result.created}** event(s) added · **${result.updated}** repaired · **${result.duplicates}** already present · **${result.unrecognized}** non-interview/unrecognized student messages skipped.`,
           allowedMentions: { parse: [] },
         });
       } catch (error) {

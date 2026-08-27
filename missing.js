@@ -85,7 +85,7 @@ module.exports = function registerMissing(client) {
               { name: 'Auto-matched now (' + data.added.length + ')', value: addedText.slice(0, 1024) },
               { name: 'Unknown in Discord — need manual link (' + data.manual.length + ')', value: manualText.slice(0, 1024) },
             ],
-            footer: { text: 'After manual links, run !backfilloutreach to credit their message history.' },
+            footer: { text: 'After manual links, run !backfilloutreach (3 days by default) or specify up to 30 days.' },
           }],
         });
         await msg.channel.send({
@@ -127,7 +127,7 @@ module.exports = function registerMissing(client) {
         `✅ Linked **${data.name}** \`${emailMatch[0]}\` to <@${target.id}>` +
         `\n• Bot_Map: ${data.botMap} | Attendance: ${data.attendance}` +
         (data.inAllData ? '' : '\n⚠️ Email not found in All Data — added with Discord display name; fix the name in Bot_Map if wrong.') +
-        `\n💡 Run \`!backfilloutreach\` to count their past messages.`
+        `\n💡 Run \`!backfilloutreach\` for the latest 3 days, or add a 1-30-day window.`
       );
     } catch (err) {
       console.error('[missing] addstudent failed:', err);

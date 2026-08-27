@@ -11,7 +11,20 @@ const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_MUTATION_TIMEOUT_MS = 180000;
 const DEFAULT_RETRY_ATTEMPTS = 5;
 const RETRY_DELAYS_MS = [750, 2000, 5000, 10000];
+const REMOTE_COMPLETION_GRACE_MS = 15000;
 const cohortMutationChains = new Map();
+
+// Apps Script returns many execution failures as HTTP 200 JSON. Retry only
+// failures that are known to be temporary, and only on reads/idempotent writes.
+// In particular, a lock timeout often means an earlier timed-out HTTP request
+// is still finishing inside Apps Script.
+const TRANSIENT_APPLICATION_ERROR_PATTERNS = [
+  /lock timeout/i,
+  /another process was holding the lock/i,
+  /service (?:is )?temporarily unavailable/i,
+  /internal error/i,
+  /try again later/i,
+];
 
 // These legacy GET actions change Apps Script/Sheet state. Keep them in the
 // same per-cohort lane as POST writes so a report cannot overlap a roster sync
@@ -41,6 +54,23 @@ function shouldRetry(error) {
   if (error?.transient === true) return true;
   const name = String(error?.name || '');
   return name === 'AbortError' || name === 'TimeoutError' || error instanceof TypeError;
+}
+
+function isAuthorizationError(error) {
+  return /^unauthorized$/i.test(String(error?.applicationError || '').trim());
+}
+
+function isTransientApplicationError(message) {
+  const value = String(message || '');
+  return TRANSIENT_APPLICATION_ERROR_PATTERNS.some(pattern => pattern.test(value));
+}
+
+function retryDelayFor(error, attempt) {
+  const normal = RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
+  const name = String(error?.name || '');
+  const remoteMayStillBeRunning = name === 'AbortError' || name === 'TimeoutError' ||
+    /lock timeout|another process was holding the lock/i.test(String(error?.applicationError || ''));
+  return remoteMayStillBeRunning ? Math.max(normal, REMOTE_COMPLETION_GRACE_MS) : normal;
 }
 
 async function requestJson(cohort, options = {}) {
@@ -87,12 +117,18 @@ async function requestJson(cohort, options = {}) {
       if (response.ok && data && !data.error) return data;
 
       const error = new Error(safeMessage(label, response, data));
-      error.transient = !data && (response.ok || TRANSIENT_STATUS.has(response.status));
+      error.applicationError = data?.error ? String(data.error) : '';
+      error.transient = (!data && (response.ok || TRANSIENT_STATUS.has(response.status))) ||
+        isTransientApplicationError(error.applicationError);
       throw error;
     } catch (error) {
       lastError = error;
-      if (!retryable || attempt >= attempts || !shouldRetry(error)) break;
-      await sleepImpl(RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)]);
+      // Confirm one isolated authentication rejection on a safe request. A
+      // persistent wrong key still fails fast on the second response; a brief
+      // Apps Script deployment/routing inconsistency no longer loses an event.
+      const confirmAuthorization = retryable && attempt === 1 && isAuthorizationError(error);
+      if (!retryable || attempt >= attempts || (!shouldRetry(error) && !confirmAuthorization)) break;
+      await sleepImpl(retryDelayFor(error, attempt));
     }
   }
 
@@ -136,10 +172,14 @@ module.exports = {
   DEFAULT_RETRY_ATTEMPTS,
   DEFAULT_MUTATION_TIMEOUT_MS,
   RETRY_DELAYS_MS,
+  REMOTE_COMPLETION_GRACE_MS,
   MUTATING_GET_ACTIONS,
   appsScriptGet,
   appsScriptPost,
   requestJson,
   runCohortMutation,
+  isAuthorizationError,
+  isTransientApplicationError,
+  retryDelayFor,
   shouldRetry,
 };

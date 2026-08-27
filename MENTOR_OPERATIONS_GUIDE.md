@@ -52,7 +52,7 @@ Presence comes from the active Form responses matched to the current Discord ros
    - truly empty new cohort: `!setupsheets empty confirm`
 2. Run `!syncmembers` so every current student has an operational row.
 3. Students place their public Google Sheet tracker links in the configured jobs channel. The selected Sheet-tab `gid` in each link is preserved.
-4. Run `!backfilljobsheets` once to import existing tracker links from channel history. The import is idempotent.
+4. Run `!backfilljobsheets` to import tracker links from the latest three calendar days. Use `!backfilljobsheets 7 days` or another 1-30-day window only when needed. The import is idempotent and does not change older daily job counts.
 5. Run `!checkjobsheets` privately. It reads public tracker tabs, reports invalid or unparseable dates, and never pings students or writes job scores/counts.
 6. Use `!checkjobsheets YYYY-MM-DD` for a known date when verifying daily counts.
 7. Use `!jobscheck` only when you intentionally want the student-facing exhaustive report; it can list and ping students.
@@ -109,7 +109,7 @@ For an adjusted range, use the date controls in the panel. Approved working date
 | Current students | `!syncmembers` | `!audit`, `!profilecheck` |
 | Attendance | `!formstatus` | `!openform`, `!closeform`, `!checkattendance` |
 | Combined data readiness | `!checkpipelines YYYY-MM-DD` | `!repairpipelines` |
-| Jobs | `!checkjobsheets YYYY-MM-DD` | `!backfilljobsheets`, deliberate `!jobscheck` |
+| Jobs | `!checkjobsheets YYYY-MM-DD` | `!backfilljobsheets [N days]`, deliberate `!jobscheck` |
 | Leave | `!leaves` | approve/adjust/reject with a note |
 | Schedules and switches | `!control` | `!schedule`, `!automation`, `!times`, `!targets` |
 | Weekly review | `!weeklyreport` | `!leaderboard`, `!rtbr` |

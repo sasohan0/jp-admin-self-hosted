@@ -1,7 +1,7 @@
 // ============================================================
 //  outreach.js - outreach channel monitor
 //   • logs every student message in #outreach to the Sheet
-//   • !backfilloutreach  - one-time: read channel history into Sheet
+//   • !backfilloutreach [N days] - reconcile recent history (default 3 days)
 //   • !outreachcheck     - run the silent-students ping now
 //   • daily cron         - same check automatically
 //  In index.js:  require('./outreach')(client);
@@ -15,6 +15,13 @@ const { isScheduledToday } = require('./scheduler');
 const { runQuotaTask } = require('./quota-queue');
 const { scheduleAtSetting } = require('./runtime-schedule');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
+const {
+  historyWindow,
+  historyWindowLabel,
+  messageWindowPosition,
+  parseHistoryCommand,
+} = require('./history-window');
+const OUTREACH_BACKFILL_BATCH_SIZE = 25;
 
 function dhakaDate(ts, timezone) {
   return new Date(ts).toLocaleDateString('en-CA', { timeZone: timezone }); // yyyy-mm-dd
@@ -89,15 +96,18 @@ module.exports = function registerOutreach(client) {
     }
 
     // ---------- supervisor commands ----------
-    if (!['!backfilloutreach', '!outreachcheck'].includes(cmd)) return;
+    const backfillCommand = parseHistoryCommand(cmd, '!backfilloutreach');
+    if (!backfillCommand && cmd !== '!outreachcheck') return;
     if (!cohort.supervisorIds.includes(msg.author.id)) return;
 
-    if (cmd === '!backfilloutreach') {
-      await msg.reply('⏳ Reading the full outreach channel history... this can take a minute.');
+    if (backfillCommand) {
+      if (backfillCommand.error) return msg.reply(backfillCommand.error);
+      const window = historyWindow(backfillCommand.days, cohort.timezone);
+      await msg.reply(`⏳ Reading outreach messages from the last **${historyWindowLabel(window)}**...`);
       try {
-        const stats = await backfillHistory(client, cohort);
+        const stats = await backfillHistory(client, cohort, { days: backfillCommand.days });
         await msg.reply(
-          `✅ Backfill done: **${stats.messages}** messages scanned, ` +
+          `✅ Backfill done for **${historyWindowLabel(stats.window)}**: **${stats.messages}** messages scanned, ` +
           `**${stats.students}** students written to the Sheet, ` +
           `**${stats.dailyEvents}** dated events reconciled, ` +
           `${stats.skipped} messages from non-students skipped.` +
@@ -117,26 +127,35 @@ module.exports = function registerOutreach(client) {
 };
 
 // ============================================================
-//  Backfill: paginate the whole channel history (100 per fetch)
+//  Backfill: paginate only the requested recent calendar-day window.
 // ============================================================
 async function backfillHistory(client, cohort, options = {}) {
   const maxMessages = Math.min(10000, Math.max(1, Number(options.maxMessages) || 10000));
-  const writeHistoricalSummary = options.writeHistoricalSummary !== false;
-  const channelId = await resolveChannel(cohort, 'channel_outreach', cohort.channels.outreach);
-  const channel = await client.channels.fetch(channelId);
-  const rosterState = options.rosterState || await rosterForBackfill(client, cohort);
+  const window = historyWindow(options.days, cohort.timezone, options.nowMs);
+  const writeHistoricalSummary = options.writeHistoricalSummary === true;
+  const write = options.post || post;
+  const pace = options.sleep || sleep;
+  const channelId = options.channel ? '' : await resolveChannel(cohort, 'channel_outreach', cohort.channels.outreach);
+  const channel = options.channel || await client.channels.fetch(channelId);
+  const rosterState = options.roster
+    ? { roster: options.roster, refreshed: true, refreshWarning: '' }
+    : options.rosterState || await rosterForBackfill(client, cohort);
   const roster = rosterState.roster;
   const byId = new Map(roster.map(s => [s.discordId, s]));
 
   const stats = {}; // email -> { first, last, count }
   const events = [];
-  let before, messages = 0, skipped = 0, loops = 0;
+  let before, messages = 0, skipped = 0, loops = 0, reachedBeforeWindow = false;
 
   while (loops < 100 && messages < maxMessages) { // safety cap: 10,000 messages
     const limit = Math.min(100, maxMessages - messages);
     const batch = await channel.messages.fetch({ limit, before });
     if (batch.size === 0) break;
     for (const m of batch.values()) {
+      const position = messageWindowPosition(m, window);
+      if (position < 0) { reachedBeforeWindow = true; continue; }
+      if (position > 0) continue;
+      messages++;
       if (m.author.bot) continue;
       const s = byId.get(m.author.id);
       if (!s || isExcluded(cohort, s)) { skipped++; continue; }
@@ -152,10 +171,10 @@ async function backfillHistory(client, cohort, options = {}) {
         messageUrl: m.url || '',
       });
     }
-    messages += batch.size;
     before = batch.last().id;
     loops++;
-    await sleep(400); // gentle on Discord's API
+    if (reachedBeforeWindow || batch.size < limit) break;
+    await pace(400); // gentle on Discord's API
   }
 
   const entries = Object.entries(stats).map(([email, e]) =>
@@ -164,19 +183,22 @@ async function backfillHistory(client, cohort, options = {}) {
   // send in chunks of 30 to keep Apps Script happy
   if (writeHistoricalSummary) {
     for (let i = 0; i < entries.length; i += 30) {
-      await post(cohort, { action: 'backfillOutreach', entries: entries.slice(i, i + 30) });
+      await write(cohort, { action: 'backfillOutreach', entries: entries.slice(i, i + 30) });
     }
   }
   let dailyEvents = 0;
-  for (let i = 0; i < events.length; i += 100) {
-    const data = await post(cohort, {
+  // Keep each locked Apps Script execution bounded. Large history chunks can
+  // outlive the HTTP timeout, continue holding the Script Lock, and make the
+  // client's retry collide with the original execution.
+  for (let i = 0; i < events.length; i += OUTREACH_BACKFILL_BATCH_SIZE) {
+    const data = await write(cohort, {
       action: 'backfillOutreachDaily',
-      entries: events.slice(i, i + 100),
+      entries: events.slice(i, i + OUTREACH_BACKFILL_BATCH_SIZE),
       guildId: cohort.guildId,
     });
     dailyEvents += Number(data.reconciled ?? data.saved) || 0;
   }
-  return { messages, students: entries.length, dailyEvents, skipped, rosterRefreshed: rosterState.refreshed };
+  return { messages, students: entries.length, dailyEvents, skipped, rosterRefreshed: rosterState.refreshed, window };
 }
 
 // ============================================================
@@ -252,3 +274,4 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 module.exports.backfillHistory = backfillHistory;
 module.exports.runOutreachCheck = runOutreachCheck;
+module.exports.OUTREACH_BACKFILL_BATCH_SIZE = OUTREACH_BACKFILL_BATCH_SIZE;

@@ -781,9 +781,12 @@ It never creates `P`/`A` attendance marks or deletes prior date columns. Any
 provisional/missing private profiles are listed only in `#bot-admin`; complete
 them and rerun the command.
 
-After the v48 backend rollout, run `!backfillinterviews` once in each active
-cohort's `#bot-admin`. It removes only exact historical duplicate events and
-rebuilds serials; it does not merge distinct interviews from the same message.
+The historical v48 whole-history interview migration is complete. Current
+`!backfillinterviews [N days]` is a recent recovery command: it defaults to
+three cohort calendar days, accepts 1-30, and reconciles only those immutable
+message events and date columns. Use the explicit private
+`!repairinterviews` workflow only when a separate whole-history repair is
+actually required.
 
 Set cohort goals in private `#bot-admin`, for example `!target applications 10`
 for STRIDE. Confirm with `!targets`. The value is guild-scoped: do not repeat it
@@ -1054,8 +1057,10 @@ one. After changing `Render-Uptime-Monitor.gs`, run
 | Startup says a field is missing | Partial isolated-mode environment | Supply the complete isolated identity/backend set. |
 | Repeated `Unexpected token '<'` / HTML response | Old/archived Apps Script URL or Web App access not set to Anyone | Compare the managed cohort URL with the active deployment, deploy a new version if required, then run `!doctor sheet` and `!doctor post`. |
 | One-off HTML 404 while Apps Script executions are otherwise completed | Transient Google Web App edge failure | Current bot retries core reads/idempotent writes automatically; check execution history and rerun the private command if all attempts fail. |
+| One outreach event reports `unauthorized`, but `!doctor post` otherwise passes | Isolated Apps Script deployment/routing inconsistency | Safe reads/idempotent writes now confirm one authentication rejection before failing. Run `!doctor post`; the silent 22:50 reconciliation restores any missed message by immutable Discord message ID without pinging students. A repeated rejection means the cohort URL/key pair must be corrected. |
+| `!backfilloutreach [N days]` reports `Lock timeout` after a long wait | Apps Script contention or an unusually busy selected window | The default is only three days, history writes use 25-event batches, and lock retries wait for remote completion. Run `!doctor post`, then rerun the same bounded command; message IDs prevent duplicates. |
 | `!backfilljobsheets`/`!backfilloutreach` reports a roster-refresh fallback | Google rejected only the optional pre-scan roster write | The import still processed every student in the last durable roster. Run `!doctor post`; rerun the backfill later only to capture brand-new unmatched Discord members. |
-| Student tracker reply says the link could not be saved immediately | All retry-safe attempts met a temporary Google Web App failure | Do not ask the student to repost. The next job check reconciles the latest 1,000 job-tracking messages automatically; run `!backfilljobsheets` sooner when immediate recovery is needed. |
+| Student tracker reply says the link could not be saved immediately | All retry-safe attempts met a temporary Google Web App failure | Do not ask the student to repost. The next job check reconciles the latest three cohort calendar days automatically; run `!backfilljobsheets` sooner, or specify a larger 1-30-day window when the message is older. |
 | Uptime monitor reports HTTP 404 | Health server does not accept the monitor query string, or old Render code is deployed | Deploy the query-safe `keepalive.js`; verify both `/` and `/?uptime=apps-script&ts=1` return 200. |
 | Bot is silent everywhere | Token/intents/login failure or wrong guild ID | Read Render logs; verify application intents and `COHORT_GUILD_ID`. |
 | One channel is silent | Wrong/stale ID or permission override | Run `!checkperms`; verify `COHORT_CHANNELS_JSON`/discovery name. |

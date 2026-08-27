@@ -2,7 +2,7 @@
 //  jobs.js - daily 15-applications accountability
 //   • students post their tracker Sheet link in #job-tracking-sheet
 //     -> bot saves it (latest link wins)
-//   • !backfilljobsheets - scan channel history for links
+//   • !backfilljobsheets [N days] - scan recent history for links (default 3)
 //   • 10:30 PM daily (+ !jobscheck) - read every non-hired
 //     student's public sheet, count today's applications,
 //     mention everyone below the daily target with today's
@@ -23,6 +23,12 @@ const { parseDateValue, parseSheetLink, readTracker } = require('./job-tracker')
 const { chunkLines } = require('./message-chunks');
 const { contactMarkdown } = require('./contact');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
+const {
+  historyWindow,
+  historyWindowLabel,
+  messageWindowPosition,
+  parseHistoryCommand,
+} = require('./history-window');
 
 async function post(cohort, body, tries = 5) {
   return appsScriptPost(cohort, body, {
@@ -39,6 +45,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function backfillJobSheetLinks(client, cohort, options = {}) {
   const maxPages = Math.max(1, Math.min(100, Number(options.maxPages || 100)));
+  const window = historyWindow(options.days, cohort.timezone, options.nowMs);
   const write = options.post || post;
   const pace = options.sleep || sleep;
   const parseLink = options.parseLink || parseSheetLink;
@@ -46,17 +53,22 @@ async function backfillJobSheetLinks(client, cohort, options = {}) {
     ? { roster: options.roster, refreshed: true, refreshWarning: '' }
     : await rosterForBackfill(client, cohort);
   const byId = new Map(rosterState.roster.map(student => [student.discordId, student]));
-  const channel = options.channel || await client.channels.fetch(cohort.channels.jobTracking);
+  const channelId = options.channel ? '' : await resolveChannel(cohort, 'channel_jobs', cohort.channels.jobTracking);
+  const channel = options.channel || await client.channels.fetch(channelId);
   const latest = new Map();
   let before;
   let loops = 0;
   let messages = 0;
+  let reachedBeforeWindow = false;
 
   while (loops < maxPages) {
     const batch = await channel.messages.fetch({ limit: 100, before });
     if (batch.size === 0) break;
-    messages += batch.size;
     for (const message of batch.values()) {
+      const position = messageWindowPosition(message, window);
+      if (position < 0) { reachedBeforeWindow = true; continue; }
+      if (position > 0) continue;
+      messages++;
       if (message.author.bot) continue;
       const tracker = parseLink(message.content);
       const student = byId.get(message.author.id);
@@ -65,6 +77,7 @@ async function backfillJobSheetLinks(client, cohort, options = {}) {
     }
     before = batch.last().id;
     loops++;
+    if (reachedBeforeWindow || batch.size < 100) break;
     await pace(400);
   }
 
@@ -77,6 +90,7 @@ async function backfillJobSheetLinks(client, cohort, options = {}) {
     candidates: items.length,
     messages,
     rosterRefreshed: rosterState.refreshed,
+    window,
   };
 }
 
@@ -503,7 +517,8 @@ module.exports = function registerJobs(client) {
 
     // ---- supervisor commands ----
     const isSheetAudit = lower === '!checkjobsheets' || lower.startsWith('!checkjobsheets ');
-    if (lower === '!jobscheck' || lower === '!backfilljobsheets' || isSheetAudit) {
+    const backfillCommand = parseHistoryCommand(lower, '!backfilljobsheets');
+    if (lower === '!jobscheck' || backfillCommand || isSheetAudit) {
       if (!cohort.supervisorIds.includes(msg.author.id)) return;
 
       if (isSheetAudit) {
@@ -526,14 +541,16 @@ module.exports = function registerJobs(client) {
         return;
       }
 
-      // backfill: scan channel history for the latest link per student
-      await msg.reply('⏳ Scanning channel history for tracker links...');
+      if (backfillCommand.error) return msg.reply(backfillCommand.error);
+      const window = historyWindow(backfillCommand.days, cohort.timezone);
+      // backfill: scan only the selected recent history for the latest link per student
+      await msg.reply(`⏳ Scanning tracker-link messages from the last **${historyWindowLabel(window)}**...`);
       try {
-        const result = await backfillJobSheetLinks(client, cohort);
+        const result = await backfillJobSheetLinks(client, cohort, { days: backfillCommand.days });
         const refreshNote = result.rosterRefreshed
           ? ''
           : '\n⚠️ The live roster refresh hit a temporary backend error, so this run used the last durable roster. Existing students were imported safely; rerun later to capture any brand-new unmatched member.';
-        await msg.reply(`✅ Backfill done: **${result.saved}** student trackers saved from **${result.messages}** channel messages to Job_Sheets (one bulk request).${refreshNote}`);
+        await msg.reply(`✅ Backfill done for **${historyWindowLabel(result.window)}**: **${result.saved}** student trackers saved from **${result.messages}** channel messages to Job_Sheets (one bulk request).${refreshNote}`);
       } catch (err) {
         await msg.reply('❌ ' + err.message);
       }

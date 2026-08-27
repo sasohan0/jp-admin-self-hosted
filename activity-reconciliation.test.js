@@ -9,6 +9,7 @@ test('daily activity reconciliation is calendar-day, bounded, silent, and idempo
   assert.match(source, /scheduleAtSettingEveryDay/);
   assert.match(source, /activityreconciletime/);
   assert.match(source, /maxMessages: 1000/);
+  assert.equal((source.match(/days: 3/g) || []).length, 2);
   assert.match(source, /writeHistoricalSummary: false/);
   assert.match(source, /backfillInterviewHistory/);
   assert.match(source, /backfillOutreachHistory/);

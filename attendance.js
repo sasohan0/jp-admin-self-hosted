@@ -361,7 +361,7 @@ function setupAttendance(client) {
             `• Outreach summaries reconciled: ${data.outreachSummaries?.reconciledStudents || 0} student(s) from ${data.outreachSummaries?.durableEvents || 0} durable event(s)`,
             `• Inactive rows styled: Attendance ${data.statusStyles?.attendance?.inactive || 0} · Jobs ${data.statusStyles?.jobs?.inactive || 0} · Outreach ${data.statusStyles?.outreach?.inactive || 0} · Interviews ${data.statusStyles?.interviews?.inactive || 0}`,
             '• Job_Sheets, Jobs_Daily, Interview_Log, Outreach_Log, and Outreach_Daily schemas verified.',
-            'Next: `!checkpipelines` and, when needed, `!backfilljobsheets` / `!backfilloutreach`.',
+            'Next: `!checkpipelines` and, when needed, `!backfilljobsheets [N days]` / `!backfilloutreach [N days]` (default 3).',
           ].join('\n'),
           allowedMentions: { parse: [] },
         });

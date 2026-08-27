@@ -165,8 +165,12 @@ base channel map.
 - POST sends JSON with `{ key, action, ...payload }` and follows redirects.
 - Core callers use `apps-script-api.js`. GETs and explicitly idempotent writes
   use up to five paced attempts when Google returns a transient HTML 404/5xx,
-  timeout, or network error. Retry URLs carry harmless cache-busting query
-  parameters to avoid a stale Google edge response. Non-idempotent writes are
+  timeout, network error, or a recognized temporary Apps Script JSON failure
+  such as Script Lock contention. Timeout/lock retries include a 15-second
+  remote-completion grace because aborting the HTTP wait does not cancel an
+  Apps Script execution. One isolated `unauthorized` response is confirmed
+  once on safe requests; a persistent rejection stops after that confirmation.
+  Retry URLs carry harmless cache-busting parameters. Non-idempotent writes are
   never retried by default.
 - Callers expect JSON. A persistent HTML/DOCTYPE or `Unexpected token '<'`
   usually means a stale deployment, incorrect Web App access setting, or an
@@ -230,8 +234,8 @@ base channel map.
 | `fillLocations` | `locations.js` | Source tab/column selection. |
 | `logOutreach` | `outreach.js` | One Discord outreach event plus guild/message ID/source URL. Message-ID replay is idempotent and recoverable: a retry reconciles the durable event into both summary and matrix views after a partial/timed-out request. |
 | `backfillOutreach` | `outreach.js` | Batched historical outreach entries. |
-| `backfillOutreachDaily` | `outreach.js` | Reconciles bounded Discord outreach events into `Outreach_Daily` by immutable message ID, attaches IDs to compatible legacy rows, then rebuilds affected summaries and matrix dates even when every input was already stored. |
-| `backfillInterviews` | `interview.js` | Bulk reconciles up to 100 parsed Discord messages by email + immutable message ID + event index, updates edited events, and rebuilds the complete `Interview Updates` matrix from `Interview_Log`. |
+| `backfillOutreachDaily` | `outreach.js` | Reconciles only messages inside the requested 1-30-day window (three days by default) into `Outreach_Daily` by immutable message ID, then rebuilds affected summaries/dates without deleting older events. The bot submits at most 25 events per locked call. |
+| `logInterviews` | `interview.js` | Live writes and bounded history reconciliation use the same per-message idempotent action. A requested 1-30-day window (three days by default) can add/repair only matching immutable message events and their dates without running a whole-history duplicate repair or changing older rows. |
 | `setupTrackingSheets` | `attendance.js` | `mode=existing` rebuilds `Jobs Applied`, `Outreach Update`, and `Interview Updates` from durable logs; `mode=empty` creates clean roster templates. Both preserve raw logs, pass the guild ID for exclusions, and refresh Attendance/status formatting. |
 | `arrangeSheetTabs` | `attendance.js` | Renames the configured active Form response tabs, then non-destructively orders/colors manual-review, active forms/reference, other Form-review, and bot-maintained groups. Unknown tabs remain visible and are not deleted. |
 | `setupCohortWorkbook` | `cohort-sheet-command.js` | Optionally binds a Sheet URL/ID, creates required tabs and the form trigger, or performs backup-first cleanup/fresh initialization with explicit confirmation. |

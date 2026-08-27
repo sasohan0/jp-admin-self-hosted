@@ -36,6 +36,7 @@ async function reconcileActivities(client, cohort) {
   }
   try {
     results.interviews = await backfillInterviewHistory(client, cohort, {
+      days: 3,
       maxMessages: 1000,
       rosterState,
     });
@@ -44,6 +45,7 @@ async function reconcileActivities(client, cohort) {
   }
   try {
     results.outreach = await backfillOutreachHistory(client, cohort, {
+      days: 3,
       maxMessages: 1000,
       writeHistoricalSummary: false,
       rosterState,
