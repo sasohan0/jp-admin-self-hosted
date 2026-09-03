@@ -26,12 +26,18 @@ Keep passwords private. A Discord bot token and the Render value named `COHORT_A
    - **Server Members Intent**
    - **Message Content Intent**
 5. Open **OAuth2 → URL Generator**.
-6. Under **Scopes**, select **bot**. Under **Bot Permissions**, select **Administrator**.
+6. Under **Scopes**, select **both `bot` and `applications.commands`**. Under **Bot Permissions**, select **Administrator**.
 7. Open the generated link, choose the correct server, and approve the invitation.
 
 ![Discord Developer Portal application list](docs/screenshots/discord-developer-login.png)
 
-On the current Discord portal, **Installation** can create the Discord-provided invite link. Confirm **Guild Install**, add the `bot` scope, and set **Permissions** to **Administrator**.
+On the current Discord portal, **Installation** can create the Discord-provided invite link. Confirm **Guild Install**, add both `bot` and `applications.commands`, and set **Permissions** to **Administrator**. If the provided link is unavailable, use **OAuth2 → URL Generator** or replace only the public Application ID in this exact link:
+
+```text
+https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&permissions=8&scope=bot%20applications.commands
+```
+
+Never use the bot token in an invite URL. The server picker shows only servers where your Discord account can manage the server.
 
 ![Discord application installation settings](docs/screenshots/discord-administrator-install.png)
 
@@ -85,12 +91,14 @@ The Blueprint generates `COHORT_API_KEY` for you and starts in safe installer mo
 
 ## Part 4 — start the private Discord guide
 
-1. In any channel where you can type, send `!setup`.
+1. In any channel where you can type, run `/setup` and select the JP ADMIN command. `!setup` remains a fallback.
 2. JP ADMIN reuses an existing channel named `bot-admin` if present. Otherwise it creates one.
-3. It repairs `#bot-admin` so `@everyone` cannot view it and you plus the bot can use it.
+3. It repairs `#bot-admin` so `@everyone` cannot view it and the server owner, initiating administrator, and bot can use it.
 4. Continue only in `#bot-admin`. Use the numbered buttons from left to right.
 
-If `!setup` does nothing, check that the bot is online, both privileged intents are enabled, and its server role has Administrator. Restart the Render service after changing Discord intents.
+The Discord server owner is always saved as the permanent recovery supervisor—even if another administrator begins setup or an older saved package omitted the owner. After the backend test succeeds, add other mentors in private `#bot-admin` with `!supervisor add @mentor`; confirm with `!supervisor list`. The owner cannot be removed, so the bot cannot become administratively inaccessible.
+
+If `/setup` is not listed, the bot was installed without `applications.commands`: repeat Part 1 with both scopes, wait up to one minute, and reopen Discord. If `!setup` alone is silent, enable Message Content Intent and restart Render. `/setup` remains usable even when that text-command intent is wrong.
 
 ## Part 5 — copy and authorize the Google backend
 
@@ -118,7 +126,7 @@ Do not create a second Apps Script deployment just because setup is retried. For
 
 ## Part 6 — finish with the buttons
 
-Return to private `#bot-admin`, send `!setup`, and complete:
+Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete:
 
 1. **Google permissions** → **Done — test connection**. This performs a read-only backend health check.
 2. **Match channels**. Existing configured or recognized channels are reused. Only missing channels are created. Private and announcement-only permissions are repaired.
@@ -158,6 +166,9 @@ After the manager saves the cohort, JP ADMIN restarts and loads the durable regi
 - **Apps Script test fails:** confirm the Web App URL ends in `/exec`, deployment access is Anyone, and `CONFIG.SECRET_KEY` exactly matches Render's generated key.
 - **Duplicate-looking channels:** do not delete anything. Run `!ensurechannels`, inspect the result, and configure aliases/IDs only after identifying the intended channel.
 - **Existing students are missing:** ensure Server Members Intent is enabled, then run `!syncmembers` again in private `#bot-admin`.
+- **`/setup` is missing:** reinstall the bot using both OAuth scopes: `bot` and `applications.commands`.
+- **A mentor cannot use setup:** have the server owner run `/setup`, then add the mentor with `!supervisor add @mentor` in private `#bot-admin`.
+- **`!setup` is silent:** use `/setup`; then enable Message Content Intent and restart Render so all prefix commands work.
 
 ## What to share
 

@@ -59,7 +59,7 @@ module.exports = function registerFormControl(client) {
           });
           return;
         }
-        await msg.reply('🔴 Form **CLOSED**. Posting attendance in 30 seconds...');
+        await msg.reply('🔴 Form **CLOSED**. Posting or updating today\'s attendance report in 30 seconds...');
         setTimeout(async () => {
           try {
             const report = await postAttendance(client, cohort);
@@ -67,12 +67,18 @@ module.exports = function registerFormControl(client) {
             markPosted(cohort);
             const warning = await scheduleAttendanceWarningAfterReport(
               client, cohort, report.date, 10 * 60 * 1000);
-            await msg.channel.send({
+            const confirmation = {
               content: warning.duplicate
-                ? `ℹ️ Attendance report posted for **${report.date}**; its warning/mail follow-up was already processed or queued.`
-                : `⏱️ Attendance report posted for **${report.date}**. The consecutive-absence warning and enabled private BCC mail follow-up will run in **10 minutes**. The durable queue recovers it after a Render restart. Present and approved-leave marks break the streak.`,
+                ? `ℹ️ Attendance report ${report.updated ? 'updated' : 'posted'} for **${report.date}**; its warning/mail follow-up was already processed or queued.`
+                : `⏱️ Attendance report ${report.updated ? 'updated' : 'posted'} for **${report.date}**. The consecutive-absence warning and enabled private BCC mail follow-up will run in **10 minutes**. The durable queue recovers it after a Render restart. Present and approved-leave marks break the streak.`,
               allowedMentions: { parse: [] },
-            }).catch(() => {});
+            };
+            await msg.channel.send(confirmation).catch(async error => {
+              console.error(`[formcontrol] ${cohort.name} queue confirmation send failed:`, error.message);
+              await msg.reply(confirmation).catch(replyError => {
+                console.error(`[formcontrol] ${cohort.name} queue confirmation retry failed:`, replyError.message);
+              });
+            });
           } catch (error) {
             console.error(`[formcontrol] delayed attendance processing failed for ${cohort.name}:`, error.message);
             await msg.channel.send({

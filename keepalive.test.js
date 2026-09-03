@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
-const { setAppHandler, startKeepAlive } = require('./keepalive');
+const { setAppHandler, setHealthProvider, startKeepAlive } = require('./keepalive');
 
 test('health server binds to all interfaces and returns OK', async (t) => {
   const server = startKeepAlive(0);
@@ -26,7 +26,7 @@ test('health server binds to all interfaces and returns OK', async (t) => {
   });
 
   assert.equal(response.statusCode, 200);
-  assert.match(response.body, /^OK \d{4}-\d{2}-\d{2}T/);
+  assert.match(response.body, /^ALIVE \d{4}-\d{2}-\d{2}T/);
 });
 
 test('health server accepts uptime cache-busting query parameters', async (t) => {
@@ -43,6 +43,25 @@ test('health server accepts uptime cache-busting query parameters', async (t) =>
     });
     assert.equal(status, 200);
   }
+});
+
+test('readiness health returns 503 while Discord is expected but unavailable', async (t) => {
+  setHealthProvider(() => ({ ok: false, status: 'running', discord: { expectedOnline: true, ready: false } }));
+  const server = startKeepAlive(0);
+  t.after(() => {
+    setHealthProvider(null);
+    return new Promise(resolve => server.close(resolve));
+  });
+  await new Promise(resolve => server.once('listening', resolve));
+  const response = await new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${server.address().port}/health`, res => {
+      let body = '';
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+    }).on('error', reject);
+  });
+  assert.equal(response.status, 503);
+  assert.equal(response.body.discord.ready, false);
 });
 
 test('health server delegates non-health routes to the configured app handler', async (t) => {

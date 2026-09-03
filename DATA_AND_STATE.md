@@ -203,7 +203,7 @@ base channel map.
 | `rtbr` | RTBR/DM/engagement/match/suggest/reporter/weekly report | Rolling combined student scores/components plus raw application/interview/workshop counts. Native Sheet dates are normalized before range checks. Callers pass the guild's validated `jobTarget`; missing/invalid values retain the legacy 15 default. |
 | `studentinfo` | students/engagement/match | Enriched identity/contact/location/resume/project information. |
 | `performance` | weekly-report/student-reports/followup | Date-bounded jobs, attendance, interviews, outreach, per-date application/outreach values, approved leave dates, communication/question, and workshop metrics; optional private interview history and phone data. Attendance counts each student/date once even when duplicate matrix rows or date columns exist. |
-| `leaverequests` | `leave.js` | Pending/decided private requests for supervisor review. |
+| `leaverequests` | `leave.js` | Pending/decided private requests for the one-message `!openleaves` supervisor manager. |
 | `leavecalendar` | Attendance/Dawn checks | Students with approved `L` on one date; used to suppress false absence/target penalties. |
 | `dawnabsences` | `followup.js` | Date-bounded Dawn `A` records with approved leave excluded. |
 | `appeals` | `appeals.js` | Pending or recent private bootcamp/Dawn appeal records for the current cohort. |

@@ -70,3 +70,59 @@ test('operating controller applies a split-window schedule immediately', async (
   assert.equal(logins, 1);
   assert.equal(destroys, 0);
 });
+
+test('continuous failover mode stays connected across midnight', async () => {
+  const client = new EventEmitter();
+  let ready = false;
+  let logins = 0;
+  let destroys = 0;
+  client.isReady = () => ready;
+  client.login = async () => { logins++; ready = true; };
+  client.destroy = () => { destroys++; ready = false; };
+  let current = new Date('2026-08-31T17:59:30.000Z');
+  const controller = startOperatingWindow(client, 'test-token', {
+    window: 'always', timezone: 'Asia/Dhaka',
+    now: () => current,
+    setInterval: () => ({ unref() {} }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.mode, 'always-on-watchdog');
+  assert.equal(logins, 1);
+  current = new Date('2026-08-31T18:00:30.000Z');
+  await controller.reconcile();
+  assert.equal(logins, 1);
+  assert.equal(destroys, 0);
+});
+
+test('operating controller exposes failed readiness and requests a clean restart after a prolonged outage', async () => {
+  const client = new EventEmitter();
+  let clock = 0;
+  let destroys = 0;
+  const exits = [];
+  const healthEvents = [];
+  client.isReady = () => false;
+  client.login = async () => { throw new Error('gateway unavailable'); };
+  client.destroy = () => { destroys++; };
+  const health = {
+    update(value) { healthEvents.push(['update', value]); },
+    markFailure(value) { healthEvents.push(['failure', value]); },
+    markDisconnected(value) { healthEvents.push(['disconnect', value]); },
+  };
+  const controller = startOperatingWindow(client, 'test-token', {
+    window: '04:50-23:30', timezone: 'Asia/Dhaka',
+    now: () => new Date('2026-08-31T12:00:00.000Z'),
+    clockMs: () => clock,
+    loginTimeoutMs: 5000,
+    restartAfterMs: 10000,
+    exit: code => { exits.push(code); },
+    health,
+    setInterval: () => ({ unref() {} }),
+  });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(destroys, 1);
+  assert.ok(healthEvents.some(event => event[0] === 'failure' && event[1] === 'discord_login_failed'));
+  clock = 10001;
+  await controller.reconcile();
+  assert.deepEqual(exits, [1]);
+  assert.ok(healthEvents.some(event => event[1] === 'discord_watchdog_restart'));
+});

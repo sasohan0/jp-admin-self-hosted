@@ -121,6 +121,13 @@ async function fetchRequest(cohort, requestId) {
   return (data.requests || []).find(item => item.requestId === requestId) || null;
 }
 
+async function fetchPendingRequests(cohort) {
+  const data = await appsScriptGet(cohort, { action: 'leaverequests', status: 'pending', limit: 200 }, {
+    label: 'Open leave requests',
+  });
+  return [...(data.requests || [])].reverse();
+}
+
 async function approvedWorkingDates(cohort, start, end) {
   const calendar = await loadWorkCalendar(cohort);
   const dates = workingDatesBetween(calendar, start, end);
@@ -194,11 +201,60 @@ function requestEmbed(cohort, request) {
     .setFooter({ text: 'Reason and contact details are private to bot-admin.' });
 }
 
+function selectManagerIndex(requests, requestId, direction = 'current') {
+  if (!requests.length) return -1;
+  const found = requests.findIndex(request => request.requestId === requestId);
+  const current = found === -1 ? 0 : found;
+  if (direction === 'previous') return Math.max(0, current - 1);
+  if (direction === 'next') return Math.min(requests.length - 1, current + 1);
+  return current;
+}
+
+function managerPayload(cohort, requests, index = 0) {
+  if (!requests.length) {
+    return {
+      embeds: [new EmbedBuilder()
+        .setTitle('Open leave requests')
+        .setColor(0x2ecc71)
+        .setDescription('✅ There are no pending leave requests.')
+        .setFooter({ text: 'Use Refresh after a student submits a new request.' })],
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`leave:page:${cohort.guildId}:none:refresh`)
+          .setLabel('Refresh').setStyle(ButtonStyle.Secondary),
+      )],
+      allowedMentions: { parse: [] },
+    };
+  }
+  const safeIndex = Math.max(0, Math.min(requests.length - 1, index));
+  const request = requests[safeIndex];
+  const embed = requestEmbed(cohort, request)
+    .setFooter({ text: `Pending ${safeIndex + 1} of ${requests.length} · oldest first · private bot-admin data` });
+  const navigation = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`leave:page:${cohort.guildId}:${request.requestId}:previous`)
+      .setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(safeIndex === 0),
+    new ButtonBuilder().setCustomId(`leave:page:${cohort.guildId}:${request.requestId}:refresh`)
+      .setLabel('Refresh').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`leave:page:${cohort.guildId}:${request.requestId}:next`)
+      .setLabel('Next').setStyle(ButtonStyle.Secondary).setDisabled(safeIndex === requests.length - 1),
+  );
+  return {
+    embeds: [embed],
+    components: [...requestButtons(cohort, request.requestId), navigation],
+    allowedMentions: { parse: [] },
+  };
+}
+
+async function refreshManagerMessage(message, cohort, requestId = '') {
+  if (!message?.edit) return;
+  const requests = await fetchPendingRequests(cohort);
+  await message.edit(managerPayload(cohort, requests, selectManagerIndex(requests, requestId)));
+}
+
 module.exports = function registerLeave(client) {
   client.on('messageCreate', async message => {
     if (message.author.bot || !message.guildId) return;
     const content = message.content.trim();
-    if (!/^!leaves?(?:\s|$)/i.test(content)) return;
+    if (!/^!(?:leaves?|openleaves)(?:\s|$)/i.test(content)) return;
     const cohort = cohorts.find(item => item.guildId === message.guildId);
     if (!cohort) return;
 
@@ -225,19 +281,9 @@ module.exports = function registerLeave(client) {
       return message.reply(`Run leave administration in <#${cohort.channels.supervisor}>.`);
     }
     try {
-      if (/^!leaves(?:\s+setup)?$/i.test(content)) {
-        const data = await appsScriptGet(cohort, { action: 'leaverequests', status: 'pending', limit: 100 }, {
-          label: 'Leave requests',
-        });
-        const pending = [...(data.requests || [])].reverse();
-        await message.reply(`✅ Leave ledger is ready. Pending requests: **${pending.length}**. Review cards follow **oldest first**, one by one.`);
-        for (const request of pending) {
-          await message.channel.send({
-            embeds: [requestEmbed(cohort, request)], components: requestButtons(cohort, request.requestId),
-            allowedMentions: { parse: [] },
-          });
-        }
-        return;
+      if (/^!(?:leaves(?:\s+setup)?|openleaves)$/i.test(content)) {
+        const pending = await fetchPendingRequests(cohort);
+        return message.reply(managerPayload(cohort, pending));
       }
       const approve = content.match(/^!leave\s+approve\s+(\S+)(?:\s+(\S+)(?:\.\.|\s+)(\S+))?(?:\s*\|\s*(.*))?$/i);
       const reject = content.match(/^!leave\s+reject\s+(\S+)(?:\s*\|\s*(.*))?$/i);
@@ -263,7 +309,7 @@ module.exports = function registerLeave(client) {
           ? `ℹ️ Leave request **${result.requestId.slice(0, 8)}** was already rejected; ${result.noticeSent ? 'its missing #issues notice was recovered' : 'no duplicate notification was sent'}.`
           : `✅ Rejected leave request **${result.requestId.slice(0, 8)}** and notified the student in #issues.`);
       }
-      await message.reply('Use `!leaves`, `!leave approve <request-id> [start..end] | note`, or `!leave reject <request-id> | reason`.');
+      await message.reply('Use `!openleaves` (or `!leaves`), `!leave approve <request-id> [start..end] | note`, or `!leave reject <request-id> | reason`.');
     } catch (error) {
       await message.reply(`❌ Leave action failed: ${String(error.message).slice(0, 300)}`);
     }
@@ -307,7 +353,15 @@ module.exports = function registerLeave(client) {
           : `✅ Leave request **${outcome.requestId.slice(0, 8)}** was queued and sent privately to your mentors.`);
       }
       if (!cohort.supervisorIds.includes(interaction.user.id)) throw new Error('Only a configured supervisor can decide leave');
+      if (interaction.channelId !== cohort.channels.supervisor) throw new Error('Manage leave only in the private bot-admin channel');
+      if (parts[2] !== cohort.guildId) throw new Error('This leave control belongs to a different cohort');
       const action = parts[1];
+      if (action === 'page' && interaction.isButton()) {
+        await interaction.deferUpdate();
+        const requests = await fetchPendingRequests(cohort);
+        const index = selectManagerIndex(requests, parts[3], parts[4]);
+        return interaction.editReply(managerPayload(cohort, requests, index));
+      }
       const requestId = parts.slice(3).join(':');
       if (action === 'approve' && interaction.isButton()) return interaction.showModal(decisionModal(cohort, requestId, 'approve'));
       if (action === 'adjust' && interaction.isButton()) return interaction.showModal(decisionModal(cohort, requestId, 'adjust'));
@@ -318,7 +372,7 @@ module.exports = function registerLeave(client) {
         if (!request) throw new Error('Leave request was not found');
         const dates = await approvedWorkingDates(cohort, request.requestedStart, request.requestedEnd);
         const result = await decide(client, cohort, interaction.user.id, requestId, 'approved', dates, interaction.fields.getTextInputValue('note'));
-        await interaction.message?.edit({ components: [] }).catch(() => {});
+        await refreshManagerMessage(interaction.message, cohort, requestId).catch(() => {});
         await interaction.editReply(result.decisionChanged === false
           ? `ℹ️ ${result.name}'s request was already approved. ${result.noticeSent ? 'Its missing #issues notice was recovered.' : 'No duplicate notification was sent.'}`
           : `✅ Approved ${result.name} for ${result.approvedDates.length} working day(s) and posted the mentor note in #issues.`);
@@ -329,7 +383,7 @@ module.exports = function registerLeave(client) {
         const range = parseDateRange(interaction.fields.getTextInputValue('start'), interaction.fields.getTextInputValue('end'), cohort.timezone);
         const dates = await approvedWorkingDates(cohort, range.start, range.end);
         const result = await decide(client, cohort, interaction.user.id, requestId, 'approved', dates, interaction.fields.getTextInputValue('note'));
-        await interaction.message?.edit({ components: [] }).catch(() => {});
+        await refreshManagerMessage(interaction.message, cohort, requestId).catch(() => {});
         await interaction.editReply(result.decisionChanged === false
           ? `ℹ️ ${result.name}'s request was already approved. ${result.noticeSent ? 'Its missing #issues notice was recovered.' : 'No duplicate notification was sent.'}`
           : `✅ Adjusted and approved ${result.name} for ${result.approvedDates.length} working day(s), with the mentor note posted in #issues.`);
@@ -338,7 +392,7 @@ module.exports = function registerLeave(client) {
       if (action === 'rejectsubmit' && interaction.isModalSubmit()) {
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         const result = await decide(client, cohort, interaction.user.id, requestId, 'rejected', [], interaction.fields.getTextInputValue('note'));
-        await interaction.message?.edit({ components: [] }).catch(() => {});
+        await refreshManagerMessage(interaction.message, cohort, requestId).catch(() => {});
         await interaction.editReply(result.decisionChanged === false
           ? `ℹ️ ${result.name}'s request was already rejected. ${result.noticeSent ? 'Its missing #issues notice was recovered.' : 'No duplicate notification was sent.'}`
           : `✅ Rejected ${result.name}'s request and posted the mentor note in #issues.`);
@@ -354,3 +408,5 @@ module.exports = function registerLeave(client) {
 module.exports.parseDateRange = parseDateRange;
 module.exports.requestButtons = requestButtons;
 module.exports.createSerialQueue = createSerialQueue;
+module.exports.managerPayload = managerPayload;
+module.exports.selectManagerIndex = selectManagerIndex;

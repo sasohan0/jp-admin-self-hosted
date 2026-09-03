@@ -9,7 +9,8 @@ const { discoverChannels } = require('./discover');
 const { registerReporter } = require('./reporter');
 const { setupAttendance } = require('./attendance');
 const { loadManagedCohortsWithRetry } = require('./managed-cohorts');
-const { setAppHandler, startKeepAlive } = require('./keepalive');
+const { setAppHandler, setHealthProvider, startKeepAlive } = require('./keepalive');
+const { runtimeHealth } = require('./runtime-health');
 
 function validateRuntimeConfig() {
   const errors = [];
@@ -119,6 +120,7 @@ function registerClient(client) {
 }
 
 async function main() {
+  runtimeHealth.update({ phase: 'loading_registry' });
   if (!process.env.DISCORD_TOKEN) {
     throw new Error('Invalid bot configuration:\n- DISCORD_TOKEN is missing');
   }
@@ -131,6 +133,7 @@ async function main() {
     },
   });
   validateRuntimeConfig();
+  runtimeHealth.update({ phase: 'configuring' });
 
   const client = new Client({
     intents: [
@@ -174,22 +177,29 @@ async function main() {
     operatingController = startOperatingWindow(client, process.env.DISCORD_TOKEN, {
       schedule: backendSchedule,
       scheduleProvider,
+      health: runtimeHealth,
     });
     setOperatingController(operatingController);
   };
 
   if (mode === 'installer') {
-    const { checkBackend, registerSelfHostedSetup, restoreSelfHostedCohort } = require('./self-hosted-setup');
+    const {
+      checkBackend,
+      registerSelfHostedSetup,
+      registerSelfHostedSlashCommands,
+      restoreSelfHostedCohort,
+    } = require('./self-hosted-setup');
     registerSelfHostedSetup(client, { onConfigured: activateConfiguredClient });
     client.once('clientReady', async () => {
       console.log(`✅ Installer logged in as ${client.user.tag}`);
       try {
+        await registerSelfHostedSlashCommands(client);
         const restored = await restoreSelfHostedCohort(client);
         if (restored) {
           await checkBackend(restored);
           await activateConfiguredClient();
         }
-        else console.log('[installer] Waiting for an administrator to run !setup');
+        else console.log('[installer] Waiting for the server owner or an administrator to run /setup (or !setup)');
       } catch (error) {
         console.error('[installer] Saved setup or backend is not ready:', error.message);
       }
@@ -204,9 +214,11 @@ async function main() {
 // Keep the Render health endpoint available even if managed registry loading or
 // Discord login fails. The process deliberately does not connect to Discord
 // with stale cohort routing after a managed-registry failure.
+setHealthProvider(() => runtimeHealth.snapshot());
 startKeepAlive();
 main().catch(err => {
   console.error('[startup] Bot did not connect:', err.message);
+  runtimeHealth.update({ phase: 'startup_failed', issue: 'startup_failed' });
   process.exitCode = 1;
 });
 

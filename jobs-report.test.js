@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { backfillJobSheetLinks, formatDailyTrackerLine } = require('./jobs');
+const { backfillJobSheetLinks, formatDailyTrackerLine, jobCheckDateKeys } = require('./jobs');
+
+test('historical job checks stay anchored to the requested date across midnight', () => {
+  assert.deepEqual(jobCheckDateKeys('2026-08-31', 3, 'Asia/Dhaka'), [
+    '2026-08-31', '2026-08-30', '2026-08-29', '2026-08-28',
+  ]);
+  assert.throws(() => jobCheckDateKeys('2026-02-30', 3, 'Asia/Dhaka'), /YYYY-MM-DD/);
+});
 
 test('nightly tracker line mentions the mapped student and shows dated, total, and new rows', () => {
   const line = formatDailyTrackerLine({

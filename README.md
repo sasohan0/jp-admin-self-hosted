@@ -49,11 +49,19 @@ The token is a password. If it is ever posted or committed, reset it immediately
 
 1. In the Discord Developer Portal open **Installation**.
 2. Enable **Guild Install**.
-3. Under Guild Install scopes include `bot`.
+3. Under **Guild Install scopes**, include **both** `bot` and `applications.commands`.
 4. Under permissions select **Administrator**.
 5. Copy/open the Discord-provided install link.
 6. Select the correct server and approve the invitation.
 7. In Discord open **Server Settings → Roles** and move the JP ADMIN bot role above the student identity, readiness, active/inactive, and hired roles it will manage.
+
+If the portal does not show a usable install link, open **OAuth2 → URL Generator**, tick both `bot` and `applications.commands`, tick **Administrator**, then open the generated URL. The equivalent URL shape is:
+
+```text
+https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&permissions=8&scope=bot%20applications.commands
+```
+
+Replace only `YOUR_APPLICATION_ID` with the public Application ID from **General Information**. Never put the bot token in a URL.
 
 ![Discord Guild Install settings](docs/screenshots/discord-administrator-install.png)
 
@@ -80,7 +88,7 @@ Render supports `plan: free` for web-service Blueprints. Free services can sleep
 
 ## Checkpoint 5 — open the private Discord setup assistant
 
-1. When the Render service is Live, send `!setup` in your Discord server.
+1. When the Render service is Live, type `/setup` in your Discord server and select the JP ADMIN command. `!setup` is a text-command fallback.
 2. JP ADMIN reuses an existing `#bot-admin` channel or creates it if missing.
 3. It repairs the channel so ordinary members cannot see it.
 4. Continue only in private `#bot-admin`.
@@ -94,7 +102,9 @@ The panel has four buttons:
 
 Use **Retry / refresh** after correcting a failed checkpoint. Repeating a failed setup step does not delete data.
 
-If `!setup` does not respond, verify Render is Live, both Discord intents are enabled, and the bot role has Administrator.
+The server owner is automatically saved as the permanent recovery supervisor. If another administrator starts setup, that administrator is added too. After the Google connection passes, the owner can appoint mentors in private `#bot-admin` with `!supervisor add @mentor`; list them with `!supervisor list`. The server owner cannot be removed, preventing a supervisor blackout.
+
+If `/setup` is missing, reinstall from the OAuth URL with **both** scopes. If `/setup` responds but setup fails, read its private error. If only `!setup` is silent, enable **Message Content Intent** and restart Render. Also verify Render is Live and the bot role has Administrator.
 
 ## Checkpoint 6 — install and authorize Apps Script
 
@@ -127,7 +137,7 @@ For later Apps Script updates, edit the existing Web App deployment to use a new
 
 ## Checkpoint 7 — complete the Discord buttons
 
-Return to private `#bot-admin`, send `!setup`, and complete the four buttons from left to right:
+Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete the four buttons from left to right:
 
 1. **Google permissions** tests the Web App connection.
 2. **Match channels** reuses configured or recognized existing channels and creates only missing standard channels.
@@ -178,6 +188,9 @@ This public repository is a release source; your private repository owns your de
 | Symptom | Safe recovery |
 | --- | --- |
 | Bot offline | Check Render **Live**, `/health`, then Render logs |
+| Bot is online but `/setup` is missing | Reinstall with both `bot` and `applications.commands` scopes; wait up to one minute and reopen Discord |
+| `/setup` says you are not a supervisor | The Discord server owner must run `/setup`; owner access repairs itself, then use `!supervisor add @mentor` |
+| `!setup` is silent but `/setup` works | Enable Message Content Intent in the Developer Portal and restart Render |
 | Discord login error | Reset the Discord token and replace only `DISCORD_TOKEN` in Render |
 | `!setup` ignored | Enable both privileged intents and verify Administrator/role hierarchy |
 | Apps Script test fails | Verify `/exec`, **Anyone** access, and the matching secret |

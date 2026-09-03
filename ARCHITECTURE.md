@@ -29,7 +29,12 @@ for AI-generated questions, scoring, interview preparation, matching, form
 design, suggestions, and the command assistant.
 
 `keepalive.js` also delegates `/intake/...` requests to `intake-portal.js` while
-preserving `/` and `/health` for Render monitoring. The portal identifies the
+preserving `/` as process liveness and `/health` as Discord-aware readiness.
+`runtime-health.js` reports only secret-free state. Inside an active operating
+window, a missing Discord connection returns 503; outside the saved schedule it
+returns 200 as `scheduled_offline`. The gateway controller bounds stuck logins,
+resets failed sessions, retries, and requests one clean process restart after a
+prolonged unhealthy interval. The portal identifies the
 applicant through Discord OAuth, renders the cohort's current editable
 enrollment template, and saves one structured `Intake Responses` row before it
 uses Discord's `guilds.join` grant. Only after Discord admission succeeds does
@@ -196,7 +201,7 @@ checked during changes.
 | Identity | `roster.js`, `discord-members.js`, `sync-command.js`, `missing.js`, `exclude.js`, `student-access.js` | Discord ↔ Sheet member mapping, eligibility, mutually exclusive status roles, and role/channel access rules |
 | External APIs | `groq.js`, `apps-script-api.js`, feature modules | AI queue/key rotation plus bounded, secret-safe Sheet Web App calls; reads/idempotent writes retry transient edge, network, timeout, and Apps Script lock failures, use a remote-completion grace after timeouts/locks, and confirm an isolated authentication rejection once |
 | Runtime control | `automations.js`, `settings.js`, `scheduler.js`, `runtime-schedule.js`, `control-center.js`, `help.js`, `state.js` | Persistent switches, targets, editable local clock times, day schedules, private overview, searchable command catalog, warm-up |
-| Reporting/health | `reporter.js`, `doctor.js`, `perms.js`, `keepalive.js` | Activity logging, diagnostics, permissions, Render health |
+| Reporting/health | `reporter.js`, `doctor.js`, `perms.js`, `keepalive.js`, `runtime-health.js` | Activity logging, diagnostics, permissions, process liveness, and Discord-aware Render readiness |
 | Pure logic | `job-tracker.js`, `message-chunks.js`, `onboarding-groups.js`, `dawn-attendance.js`, `channel-names.js`, `forwarder-route.js` | Testable parsing/distribution/normalization without Discord |
 
 ## Major feature flows
@@ -365,8 +370,9 @@ private command remains available any day. It refreshes the Discord-primary
 roster before warning, uses the backend's recorded attendance/application/interview facts, and posts only
 mentions/counts—never contacts or private Sheet rows. `dawn-discipline.js`
 uses approved leave from the cohort backend to prevent both Attendance and Dawn
-absence penalties. `leave.js` owns the private `#issues` request modal and
-serializes submissions and decisions per cohort. The Apps Script ledger is the
+absence penalties. `leave.js` owns the private `#issues` request modal and a
+single oldest-first `!openleaves` bot-admin manager, then serializes submissions
+and decisions per cohort. The Apps Script ledger is the
 idempotent integrity boundary: duplicate pending requests do not create a
 second bot-admin card, every decision requires a mentor note, and the result is
 posted in `#issues` mentioning only that student. Approvals write `L` through

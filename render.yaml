@@ -19,6 +19,6 @@ services:
       - key: COHORT_TIMEZONE
         value: Asia/Dhaka
       - key: BOT_ACTIVE_WINDOW
-        value: 00:00-23:59
+        value: always
       - key: BOT_ACTIVE_TIMEZONE
         value: Asia/Dhaka

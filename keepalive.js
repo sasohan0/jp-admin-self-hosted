@@ -14,9 +14,14 @@
 const http = require('http');
 
 let appHandler = null;
+let healthProvider = null;
 
 function setAppHandler(handler) {
   appHandler = typeof handler === 'function' ? handler : null;
+}
+
+function setHealthProvider(provider) {
+  healthProvider = typeof provider === 'function' ? provider : null;
 }
 
 function startKeepAlive(port = process.env.PORT || 3000) {
@@ -26,9 +31,20 @@ function startKeepAlive(port = process.env.PORT || 3000) {
     let pathname = '';
     try { pathname = new URL(req.url || '/', 'http://localhost').pathname; }
     catch { pathname = req.url || ''; }
-    if (pathname === '/' || pathname === '/health') {
+    if (pathname === '/') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      res.end('OK ' + new Date().toISOString());
+      res.end('ALIVE ' + new Date().toISOString());
+      return;
+    }
+    if (pathname === '/health') {
+      const health = healthProvider ? healthProvider() : {
+        ok: true, status: 'liveness_only', checkedAt: new Date().toISOString(),
+      };
+      res.writeHead(health.ok ? 200 : 503, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      });
+      res.end(JSON.stringify(health));
       return;
     }
     try {
@@ -52,4 +68,4 @@ function startKeepAlive(port = process.env.PORT || 3000) {
   return server;
 }
 
-module.exports = { setAppHandler, startKeepAlive };
+module.exports = { setAppHandler, setHealthProvider, startKeepAlive };

@@ -28,7 +28,7 @@ Run these in private `#bot-admin`, in order:
 | During the day | `!checkpipelines YYYY-MM-DD` | None |
 | Before a jobs follow-up | `!checkjobsheets YYYY-MM-DD` | None |
 | Attendance closes | `!closeform` | Closes the Form, then posts attendance after 30 seconds |
-| End of day | Review `!leaves`, `!checkpipelines YYYY-MM-DD all`, and `!control` | None unless you approve/reject a leave |
+| End of day | Review `!openleaves`, `!checkpipelines YYYY-MM-DD all`, and `!control` | None unless you approve/reject a leave |
 | Weekly review | `!weeklyreport` and, if used, `!leaderboard` | Posts the selected leaderboard |
 
 Use `!closeform silent` when a Form must close without an attendance post. Use `!attendance` only when you deliberately want an immediate manual attendance post. Commands such as `!jobscheck`, `!followup ...`, `!activityprompt ...`, reminders, and `!say` can publish or ping; do not use them as diagnostics.
@@ -88,8 +88,8 @@ Student flow:
 
 Mentor flow:
 
-1. Run `!leaves` in private `#bot-admin`.
-2. Review the pending request card and use **Approve**, **Adjust dates**, or **Reject**.
+1. Run `!openleaves` (or the older alias `!leaves`) in private `#bot-admin`.
+2. Review the oldest pending request in the single manager. Use **Previous**, **Refresh**, and **Next** to move without posting duplicate cards, then use **Approve**, **Adjust dates**, or **Reject**.
 3. Add the required mentor note and confirm the exact dates.
 4. If buttons are unavailable, use:
 
@@ -110,14 +110,14 @@ For an adjusted range, use the date controls in the panel. Approved working date
 | Attendance | `!formstatus` | `!openform`, `!closeform`, `!checkattendance` |
 | Combined data readiness | `!checkpipelines YYYY-MM-DD` | `!repairpipelines` |
 | Jobs | `!checkjobsheets YYYY-MM-DD` | `!backfilljobsheets [N days]`, deliberate `!jobscheck` |
-| Leave | `!leaves` | approve/adjust/reject with a note |
+| Leave | `!openleaves` | page through requests, then approve/adjust/reject with a note |
 | Schedules and switches | `!control` | `!schedule`, `!automation`, `!times`, `!targets` |
 | Weekly review | `!weeklyreport` | `!leaderboard`, `!rtbr` |
 | Find any command | `!help` or `!jp <question>` | See `MENTOR_COMMAND_REFERENCE.md` |
 
 ## Command safety levels
 
-- **Private/read-only:** `!doctor`, `!checkperms`, `!checkattendance`, `!checkpipelines`, `!checkjobsheets`, `!forms`, `!formstatus`, `!leaves`, `!control`, `!settings`, `!times`, `!targets`, `!schedule`.
+- **Private/read-only:** `!doctor`, `!checkperms`, `!checkattendance`, `!checkpipelines`, `!checkjobsheets`, `!forms`, `!formstatus`, `!openleaves`, `!leaves`, `!control`, `!settings`, `!times`, `!targets`, `!schedule`.
 - **Private but changes data/configuration:** setup, repair, sync, backfill, target/time/schedule/switch, supervisor, status, mailer, and leave-decision commands.
 - **Public or can ping:** `!openform`, normal `!closeform`, `!attendance`, `!jobscheck`, `!leaderboard`, `!weeklyreport`, `!rtbr`, `!followup ...`, reminders, activity prompts, `!say`, and announcements.
 
@@ -125,10 +125,11 @@ The complete categorized list is in `MENTOR_COMMAND_REFERENCE.md`. The live priv
 
 ## Recovery without deleting data
 
-- Bot offline: check Render **Live**, then `/health`, then Render logs.
+- Bot offline: check Render **Live**, then `/health`. HTTP 200 with `ready` means Discord is connected; `scheduled_offline` means the saved operating window is intentionally closed; HTTP 503 means startup or Discord readiness failed. Then inspect Render events/logs and the public Render status page before changing tokens or channels.
 - Attendance mismatch: `!checkattendance` → `!repairattendance` → recheck.
 - Jobs mismatch: `!checkjobsheets <date>` → verify tracker `gid` and dates → recheck.
 - Missing students: enable **Server Members Intent**, then `!syncmembers`.
 - Channel issue: `!checkperms` → `!repairpermissions`; do not delete or recreate channels.
 - Backend issue: verify the existing Apps Script `/exec` deployment and matching secret, then `!doctor sheet` and `!doctor post`.
 - Duplicate-looking output: stop the automation switch, check the schedule/logs, and verify the module was not registered twice before restarting. Backfills and leave decisions have durable/idempotent guards, but public commands should still be run once.
+- Regional Render outage: on a trusted local computer run `npm ci`, copy `.env.failover.example` to the gitignored `.env.failover`, and fill it only with this mentor-owned deployment's Render health URL, public Discord Application ID, cohort identity, and private credentials. Then run `npm run start:failover`. The guard refuses legacy/wrong cohort or bot identities, refuses to start while Render is healthy, and automatically stops the local bot when the primary health endpoint recovers. Never run the same token in two healthy bot processes.

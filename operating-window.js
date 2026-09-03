@@ -36,6 +36,7 @@ function isWithinWindow(minutes, window) {
 
 function startOperatingWindow(client, token, options = {}) {
   const raw = options.window || process.env.BOT_ACTIVE_WINDOW || '04:50-23:30';
+  const alwaysOn = /^(?:always|24\/?7)$/i.test(String(raw).trim());
   const timezone = options.timezone || process.env.BOT_ACTIVE_TIMEZONE || 'Asia/Dhaka';
   const now = options.now || (() => new Date());
   const intervalMs = options.intervalMs || 30 * 1000;
@@ -43,20 +44,46 @@ function startOperatingWindow(client, token, options = {}) {
   const clearTimer = options.clearInterval || clearInterval;
   const scheduleProvider = options.scheduleProvider;
   const refreshEveryMs = Math.max(30000, Number(options.refreshEveryMs || 5 * 60 * 1000));
+  const loginTimeoutMs = Math.max(5000, Number(options.loginTimeoutMs || 45 * 1000));
+  const restartAfterMs = Math.max(loginTimeoutMs * 2, Number(options.restartAfterMs || 5 * 60 * 1000));
+  const clockMs = options.clockMs || Date.now;
+  const exit = options.exit || (code => process.exit(code));
+  const health = options.health;
 
   if (!raw) {
     client.login(token);
     return { mode: 'always-on', stop() {} };
   }
 
-  const window = parseWindow(raw);
+  const window = alwaysOn ? null : parseWindow(raw);
   let schedule = options.schedule
     ? normalizeSchedule(options.schedule)
-    : scheduleFromWindow(raw, timezone);
+    : scheduleFromWindow(alwaysOn ? '00:00-23:59' : raw, timezone);
   let connecting = false;
   let expectedOnline = false;
   let reconciling = false;
   let lastRefresh = Date.now();
+  let unreadySince = null;
+  let restartRequested = false;
+
+  const markDisconnected = issue => {
+    if (expectedOnline) health?.markDisconnected?.(issue, now());
+  };
+
+  const loginWithTimeout = async () => {
+    let timeout;
+    try {
+      return await Promise.race([
+        client.login(token),
+        new Promise((resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error(`Discord login timed out after ${loginTimeoutMs}ms`)), loginTimeoutMs);
+          timeout.unref?.();
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  };
 
   const refreshSchedule = async () => {
     if (!scheduleProvider || Date.now() - lastRefresh < refreshEveryMs) return;
@@ -70,18 +97,46 @@ function startOperatingWindow(client, token, options = {}) {
     reconciling = true;
     try {
       await refreshSchedule();
-      const shouldBeOnline = isScheduleActive(schedule, now());
+      const shouldBeOnline = alwaysOn || isScheduleActive(schedule, now());
       if (shouldBeOnline) {
         expectedOnline = true;
-        if (client.isReady?.() || connecting) return;
+        health?.update?.({ expectedOnline: true, phase: 'running' });
+        if (client.isReady?.()) {
+          unreadySince = null;
+          health?.markReady?.(now());
+          return;
+        }
+        if (connecting) return;
+        if (unreadySince === null) unreadySince = clockMs();
+        if (!restartRequested && clockMs() - unreadySince >= restartAfterMs) {
+          restartRequested = true;
+          health?.markFailure?.('discord_watchdog_restart');
+          console.error(`[window] Discord remained unavailable for ${Math.round(restartAfterMs / 1000)} seconds; restarting for a clean gateway session`);
+          exit(1);
+          return;
+        }
         connecting = true;
-        try { await client.login(token); }
-        catch (err) { console.error('[window] Discord login failed:', err.message); }
+        try {
+          await loginWithTimeout();
+          if (client.isReady?.()) {
+            unreadySince = null;
+            health?.markReady?.(now());
+          }
+        }
+        catch (err) {
+          health?.markFailure?.(err.message.includes('timed out') ? 'discord_login_timeout' : 'discord_login_failed');
+          console.error('[window] Discord login failed:', err.message);
+          try { client.destroy(); }
+          catch (destroyError) { console.error('[window] Discord session reset failed:', destroyError.message); }
+        }
         finally { connecting = false; }
         return;
       }
 
       expectedOnline = false;
+      unreadySince = null;
+      restartRequested = false;
+      health?.update?.({ expectedOnline: false, phase: 'running', discordReady: false, issue: null, consecutiveFailures: 0 });
       if (client.isReady?.() || connecting) {
         try { client.destroy(); }
         catch (err) { console.error('[window] Discord disconnect failed:', err.message); }
@@ -96,15 +151,23 @@ function startOperatingWindow(client, token, options = {}) {
 
   client.on?.('clientReady', () => {
     if (expectedOnline) {
-      const shown = formatSchedule(schedule);
-      console.log(`[window] Discord online inside ${shown.windows} ${schedule.timezone}`);
+      unreadySince = null;
+      health?.markReady?.(now());
+          const shown = formatSchedule(schedule);
+          console.log(alwaysOn
+            ? `[window] Discord online in continuous failover mode ${schedule.timezone}`
+            : `[window] Discord online inside ${shown.windows} ${schedule.timezone}`);
     }
   });
+  client.on?.('shardDisconnect', () => markDisconnected('discord_shard_disconnected'));
+  client.on?.('shardError', () => markDisconnected('discord_shard_error'));
+  client.on?.('invalidated', () => markDisconnected('discord_session_invalidated'));
+  client.on?.('error', () => markDisconnected('discord_client_error'));
   reconcile();
   const timer = setTimer(reconcile, intervalMs);
   timer.unref?.();
   return {
-    mode: 'scheduled',
+    mode: alwaysOn ? 'always-on-watchdog' : 'scheduled',
     window,
     get schedule() { return schedule; },
     timezone: schedule.timezone,

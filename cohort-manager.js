@@ -12,7 +12,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js');
-const { cohorts, findCohort } = require('./config');
+const { cohorts, findCohort, mode } = require('./config');
 const {
   MAX_COHORTS,
   buildManagedCohorts,
@@ -77,6 +77,12 @@ function applySupervisorChange(currentIds, action, targetId, actorId) {
   const next = ids.filter(id => id !== targetId);
   if (!next.length) throw new Error('A cohort must keep at least one supervisor.');
   return { ids: next, changed: true };
+}
+
+function assertInstallerOwnerRetained(runtimeMode, action, targetId, ownerId) {
+  if (runtimeMode === 'installer' && action === 'remove' && String(targetId) === String(ownerId)) {
+    throw new Error('The server owner is the permanent recovery supervisor and cannot be removed.');
+  }
 }
 
 function isGlobalManager(userId) {
@@ -374,9 +380,11 @@ async function handleSupervisorCommand(client, msg, cohort, command) {
     await msg.channel.send(supervisorListPayload(cohort));
     return;
   }
-  if (!controlCohort()) {
-    throw new Error('Discord-managed supervisors require COHORT_CONTROL_KEY in the unified Render service.');
+  const managedControl = Boolean(controlCohort());
+  if (!managedControl && mode !== 'installer') {
+    throw new Error('Discord-managed supervisors require COHORT_CONTROL_KEY or self-hosted installer mode.');
   }
+  assertInstallerOwnerRetained(mode, command.action, command.userId, msg.guild.ownerId);
 
   let targetPresent = false;
   if (command.action === 'add') {
@@ -405,20 +413,25 @@ async function handleSupervisorCommand(client, msg, cohort, command) {
     return;
   }
 
-  const next = serializeCohort(cohort);
-  next.supervisorIds = change.ids;
-  const entries = cohorts.map(item => item.registryKey === cohort.registryKey ? next : serializeCohort(item));
-  buildManagedCohorts(entries);
-
   await msg.reply({
     content: `Updating **${cohort.name}** supervisors, permissions, and student tracking...`,
     allowedMentions: { parse: [] },
   });
-  await saveCurrentCohorts(entries);
+  let entries = null;
+  if (managedControl) {
+    const next = serializeCohort(cohort);
+    next.supervisorIds = change.ids;
+    entries = cohorts.map(item => item.registryKey === cohort.registryKey ? next : serializeCohort(item));
+    buildManagedCohorts(entries);
+    await saveCurrentCohorts(entries);
+  }
 
-  // Apply authorization immediately; the managed-registry restart will rebuild
-  // the same array on startup.
+  // Apply authorization immediately. Managed mode also rebuilds this array on
+  // restart; self-hosted mode saves the same change in its signed capsule.
   cohort.supervisorIds.splice(0, cohort.supervisorIds.length, ...change.ids);
+  if (mode === 'installer') {
+    await require('./self-hosted-setup').saveSetupCapsule(client, cohort);
+  }
 
   const issues = command.action === 'add' && !targetPresent
     ? ['the user has not joined yet; private access will be applied after joining and `!repairpermissions`']
@@ -453,17 +466,21 @@ async function handleSupervisorCommand(client, msg, cohort, command) {
     content: [
       `✅ ${verb} <@${command.userId}> ${command.action === 'add' ? 'as' : 'from'} **${cohort.name}** supervisor access.${tracking}`,
       issues.length ? `⚠️ ${issues.join('\n⚠️ ')}` : 'Private/locked channel permissions were reconciled.',
-      'Restarting JP ADMIN so every handler and schedule uses the saved supervisor list.',
+      managedControl
+        ? 'Restarting JP ADMIN so every handler and schedule uses the saved supervisor list.'
+        : 'The signed self-hosted setup state was updated; no restart is required.',
     ].join('\n'),
     allowedMentions: { parse: [] },
   });
 
-  try { await triggerDeploy(); }
-  catch (err) {
-    await msg.channel.send({
-      content: `The supervisor change is saved and active, but automatic restart failed: ${safeError(err)}\nUse **Manual Deploy → Deploy latest commit** once in Render.`,
-      allowedMentions: { parse: [] },
-    });
+  if (managedControl) {
+    try { await triggerDeploy(); }
+    catch (err) {
+      await msg.channel.send({
+        content: `The supervisor change is saved and active, but automatic restart failed: ${safeError(err)}\nUse **Manual Deploy → Deploy latest commit** once in Render.`,
+        allowedMentions: { parse: [] },
+      });
+    }
   }
 }
 
@@ -583,6 +600,7 @@ module.exports = function registerCohortManager(client) {
 
 module.exports.deriveRegistryKey = deriveRegistryKey;
 module.exports.applySupervisorChange = applySupervisorChange;
+module.exports.assertInstallerOwnerRetained = assertInstallerOwnerRetained;
 module.exports.isGlobalManager = isGlobalManager;
 module.exports.parseSupervisorCommand = parseSupervisorCommand;
 module.exports.parseSupervisorIds = parseSupervisorIds;

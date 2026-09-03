@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 
 const {
   CAPSULE_PREFIX,
+  canStartInstallerSetup,
+  ownerFirstSupervisorIds,
   parseSetupCapsule,
   signSetupPayload,
 } = require('./self-hosted-setup');
@@ -33,4 +35,25 @@ test('self-hosted setup capsule rejects tampering and wrong secrets', () => {
 test('self-hosted setup capsule rejects invalid identity data even when correctly signed', () => {
   const invalid = { ...payload, supervisorIds: [] };
   assert.throws(() => parseSetupCapsule(signSetupPayload(invalid, secret), secret), /invalid supervisor IDs/);
+});
+
+test('self-hosted setup keeps the server owner as the first recovery supervisor', () => {
+  assert.deepEqual(
+    ownerFirstSupervisorIds('111111111111111111', ['222222222222222222'], '333333333333333333'),
+    ['111111111111111111', '222222222222222222', '333333333333333333'],
+  );
+  assert.deepEqual(
+    ownerFirstSupervisorIds('111111111111111111', ['111111111111111111'], '111111111111111111'),
+    ['111111111111111111'],
+  );
+});
+
+test('server owner can recover setup without a cached member permission object', () => {
+  assert.equal(canStartInstallerSetup({ ownerId: '111111111111111111' }, null, '111111111111111111'), true);
+  assert.equal(canStartInstallerSetup({ ownerId: '111111111111111111' }, null, '222222222222222222'), false);
+  assert.equal(canStartInstallerSetup(
+    { ownerId: '111111111111111111' },
+    { permissions: String(1n << 3n) },
+    '222222222222222222',
+  ), true);
 });

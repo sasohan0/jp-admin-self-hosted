@@ -4,6 +4,7 @@
     "main":  "index.js",
     "scripts":  {
                     "start":  "node index.js",
+                    "start:failover":  "node scripts/start-local-failover.js",
                     "test":  "node scripts/run-installer-tests.js",
                     "test:installer":  "node scripts/run-installer-tests.js",
                     "docs:commands":  "node scripts/build-command-reference.js",

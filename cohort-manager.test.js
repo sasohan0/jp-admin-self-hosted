@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   applySupervisorChange,
+  assertInstallerOwnerRetained,
   deriveRegistryKey,
   parseSupervisorCommand,
   parseSupervisorIds,
@@ -54,6 +55,19 @@ test('supervisor changes are idempotent and prevent self-lockout', () => {
   assert.throws(
     () => applySupervisorChange(current, 'remove', current[0], current[0]),
     /cannot remove yourself/,
+  );
+});
+
+test('self-hosted supervisor changes cannot remove the server owner recovery account', () => {
+  assert.throws(
+    () => assertInstallerOwnerRetained('installer', 'remove', '111111111111111111', '111111111111111111'),
+    /permanent recovery supervisor/,
+  );
+  assert.doesNotThrow(
+    () => assertInstallerOwnerRetained('installer', 'remove', '222222222222222222', '111111111111111111'),
+  );
+  assert.doesNotThrow(
+    () => assertInstallerOwnerRetained('multi', 'remove', '111111111111111111', '111111111111111111'),
   );
 });
 

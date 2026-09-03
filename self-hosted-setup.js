@@ -93,6 +93,27 @@ function setupPayload(cohort) {
   };
 }
 
+function ownerFirstSupervisorIds(ownerId, existingIds = [], initiatingUserId = '') {
+  return [...new Set([
+    String(ownerId || '').trim(),
+    ...existingIds.map(id => String(id || '').trim()),
+    String(initiatingUserId || '').trim(),
+  ].filter(id => /^\d{15,20}$/.test(id)))];
+}
+
+function canStartInstallerSetup(guild, member, userId) {
+  if (String(guild?.ownerId || '') === String(userId || '')) return true;
+  try {
+    const permissions = member?.permissions?.has
+      ? member.permissions
+      : new PermissionsBitField(member?.permissions || 0n);
+    return permissions.has(PermissionsBitField.Flags.Administrator) ||
+      permissions.has(PermissionsBitField.Flags.ManageGuild);
+  } catch {
+    return false;
+  }
+}
+
 async function pinnedMessages(channel) {
   const result = await channel.messages.fetchPins();
   return result.items.map(item => item.message);
@@ -133,12 +154,18 @@ async function restoreSelfHostedCohort(client) {
       if (payload.guildId !== guild.id || payload.channels.supervisor !== channel.id) {
         throw new Error(`saved setup in ${guild.name} does not match its private channel`);
       }
+      payload.supervisorIds = ownerFirstSupervisorIds(guild.ownerId, payload.supervisorIds);
       restored.push(cohortFromPayload(payload));
     }
   }
   if (restored.length > 1) throw new Error('self-hosted installer mode supports one configured server');
   if (!restored.length) return null;
   cohorts.splice(0, cohorts.length, restored[0]);
+  const guild = client.guilds.cache.get(restored[0].guildId);
+  if (guild?.ownerId) {
+    await ensurePrivateBotAdmin(client, guild, guild.ownerId);
+    await saveSetupCapsule(client, restored[0]);
+  }
   return restored[0];
 }
 
@@ -285,60 +312,135 @@ function errorText(error) {
     .slice(0, 1200);
 }
 
+async function registerSetupCommandInGuild(guild) {
+  const commands = await guild.commands.fetch();
+  const existing = commands.find(command => command.name === 'setup');
+  const definition = {
+    name: 'setup',
+    description: 'Open or recover the private JP ADMIN setup assistant',
+  };
+  if (existing) await existing.edit(definition);
+  else await guild.commands.create(definition);
+}
+
+async function registerSelfHostedSlashCommands(client) {
+  if (mode !== 'installer') return { registered: 0, failed: 0 };
+  let registered = 0;
+  let failed = 0;
+  for (const guild of client.guilds.cache.values()) {
+    try {
+      await registerSetupCommandInGuild(guild);
+      registered += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`[installer] Could not register /setup in ${guild.name}: ${errorText(error)}`);
+    }
+  }
+  console.log(`[installer] /setup available in ${registered} server(s); ${failed} registration failure(s)`);
+  return { registered, failed };
+}
+
+async function openSelfHostedSetup(client, request) {
+  const { guild, userId, member, channelId, respond } = request;
+  let cohort = cohorts.find(item => item.guildId === guild.id);
+  if (cohort) {
+    if (String(guild.ownerId) === String(userId) && !cohort.supervisorIds.includes(String(userId))) {
+      cohort.supervisorIds = ownerFirstSupervisorIds(guild.ownerId, cohort.supervisorIds);
+      await ensurePrivateBotAdmin(client, guild, guild.ownerId);
+      await saveSetupCapsule(client, cohort);
+    }
+    if (!cohort.supervisorIds.includes(String(userId))) {
+      await respond('Only a configured supervisor or this server’s owner can open setup. Ask the owner to run `/setup` and then `!supervisor add @you`.');
+      return;
+    }
+    if (channelId !== cohort.channels?.supervisor) {
+      await respond(`Continue privately in <#${cohort.channels.supervisor}>.`);
+      return;
+    }
+    const channel = await guild.channels.fetch(cohort.channels.supervisor);
+    if (!channel?.isTextBased()) throw new Error('the private bot-admin channel is unavailable');
+    await channel.send(panelPayload(cohort));
+    await respond('Setup panel refreshed below. The server owner remains a recovery supervisor.');
+    return;
+  }
+  if (mode !== 'installer') return;
+  if (cohorts.length) {
+    await respond('This self-hosted bot is already paired with another server. Use that server’s private `#bot-admin`; no settings were changed here.');
+    return;
+  }
+  if (!canStartInstallerSetup(guild, member, userId)) {
+    await respond('Only this server’s owner or a member with **Administrator / Manage Server** can start setup.');
+    return;
+  }
+
+  validateInstallerBackend();
+  const supervisorIds = ownerFirstSupervisorIds(guild.ownerId, [], userId);
+  let channel;
+  for (const supervisorId of supervisorIds) {
+    channel = await ensurePrivateBotAdmin(client, guild, supervisorId);
+  }
+  cohort = cohortFromPayload({
+    version: 1,
+    name: process.env.COHORT_NAME || guild.name,
+    guildId: guild.id,
+    supervisorIds,
+    timezone: process.env.COHORT_TIMEZONE || 'Asia/Dhaka',
+    channels: { supervisor: channel.id },
+  });
+  cohorts.splice(0, cohorts.length, cohort);
+  await saveSetupCapsule(client, cohort);
+  await channel.send(panelPayload(cohort));
+  await respond(`Private setup is ready in <#${channel.id}>. The server owner was saved as the permanent recovery supervisor.`);
+}
+
 function registerSelfHostedSetup(client, options = {}) {
   if (client.__jpSetupAssistantRegistered) return;
   client.__jpSetupAssistantRegistered = true;
 
+  client.on('guildCreate', async guild => {
+    if (mode !== 'installer') return;
+    try { await registerSetupCommandInGuild(guild); }
+    catch (error) {
+      console.error(`[installer] Could not register /setup in newly joined ${guild.name}: ${errorText(error)}`);
+    }
+  });
+
   client.on('messageCreate', async message => {
     if (message.author.bot || !/^!setup(?:\s+(?:guide|wizard))?$/i.test(message.content.trim())) return;
     if (!message.guild) return;
-    let cohort = cohorts.find(item => item.guildId === message.guildId);
-    if (cohort) {
-      if (!cohort.supervisorIds.includes(message.author.id)) return;
-      if (message.channelId !== cohort.channels?.supervisor) {
-        await message.reply({ content: `Continue privately in <#${cohort.channels.supervisor}>.`, allowedMentions: { parse: [] } });
-        return;
-      }
-      await message.channel.send(panelPayload(cohort));
-      return;
-    }
-    if (mode !== 'installer') return;
-    if (cohorts.length) {
-      await message.reply({
-        content: 'This self-hosted bot is already paired with another server. Use that server’s private `#bot-admin`; no settings were changed here.',
-        allowedMentions: { parse: [] },
-      });
-      return;
-    }
-    const member = message.member;
-    if (!member?.permissions?.has(PermissionsBitField.Flags.Administrator) &&
-        !member?.permissions?.has(PermissionsBitField.Flags.ManageGuild)) {
-      await message.reply({ content: 'Only a server administrator can start setup.', allowedMentions: { parse: [] } });
-      return;
-    }
     try {
-      validateInstallerBackend();
-      const channel = await ensurePrivateBotAdmin(client, message.guild, message.author.id);
-      cohort = cohortFromPayload({
-        version: 1,
-        name: process.env.COHORT_NAME || message.guild.name,
-        guildId: message.guild.id,
-        supervisorIds: [message.author.id],
-        timezone: process.env.COHORT_TIMEZONE || 'Asia/Dhaka',
-        channels: { supervisor: channel.id },
+      await openSelfHostedSetup(client, {
+        guild: message.guild,
+        userId: message.author.id,
+        member: message.member,
+        channelId: message.channelId,
+        respond: content => message.reply({ content, allowedMentions: { parse: [] } }),
       });
-      cohorts.splice(0, cohorts.length, cohort);
-      await saveSetupCapsule(client, cohort);
-      await channel.send(panelPayload(cohort));
-      if (message.channelId !== channel.id) {
-        await message.reply({ content: `Private setup is ready in <#${channel.id}>.`, allowedMentions: { parse: [] } });
-      }
     } catch (error) {
       await message.reply({ content: `Setup could not start: ${errorText(error)}`, allowedMentions: { parse: [] } });
     }
   });
 
   client.on('interactionCreate', async interaction => {
+    if (interaction.isChatInputCommand() && interaction.commandName === 'setup') {
+      if (!interaction.inGuild()) return;
+      await interaction.deferReply({ ephemeral: true }).catch(() => {});
+      try {
+        await openSelfHostedSetup(client, {
+          guild: interaction.guild,
+          userId: interaction.user.id,
+          member: interaction.member,
+          channelId: interaction.channelId,
+          respond: content => safeInteractionReply(interaction, { content, allowedMentions: { parse: [] } }),
+        });
+      } catch (error) {
+        await safeInteractionReply(interaction, {
+          content: `Setup could not start: ${errorText(error)}`,
+          allowedMentions: { parse: [] },
+        }).catch(() => {});
+      }
+      return;
+    }
     if (!interaction.isButton() || !interaction.customId?.startsWith(`${PREFIX}:`)) return;
     const cohort = configuredContext(interaction.guildId, interaction.channelId, interaction.user.id);
     if (!cohort) {
@@ -448,12 +550,18 @@ function registerSelfHostedSetup(client, options = {}) {
 
 module.exports = {
   CAPSULE_PREFIX,
+  canStartInstallerSetup,
   checkBackend,
   cohortFromPayload,
   ensurePrivateBotAdmin,
+  openSelfHostedSetup,
+  ownerFirstSupervisorIds,
   parseSetupCapsule,
   registerSelfHostedSetup,
+  registerSelfHostedSlashCommands,
+  registerSetupCommandInGuild,
   restoreSelfHostedCohort,
+  saveSetupCapsule,
   setupPayload,
   signSetupPayload,
   validateInstallerBackend,
