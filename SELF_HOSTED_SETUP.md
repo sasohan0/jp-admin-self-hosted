@@ -2,6 +2,8 @@
 
 This guide is for a mentor who has never created a Discord bot, used Render, or deployed Apps Script. Your copy is independent: it uses your Discord application, your Render service, your Google Sheet, and your Apps Script deployment. It does not connect to the STRIDE production bot or another mentor's data.
 
+For a printable, screenshot-backed walkthrough, use [`output/pdf/JP-ADMIN-Self-Hosted-Installation-Guide.pdf`](output/pdf/JP-ADMIN-Self-Hosted-Installation-Guide.pdf). It follows the same safe sequence and includes a final completion card.
+
 Setup never deletes an existing Discord channel, message history, Google Sheet tab, or student record. JP ADMIN matches existing channel names first and creates only missing standard channels. The first roster sync includes existing non-bot, non-supervisor server members even if they never completed intake.
 
 ## Before you start

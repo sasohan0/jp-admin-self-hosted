@@ -6,6 +6,8 @@ This repository is the safe self-hosted edition. Your copy runs with **your Disc
 
 No programming experience is required. Keep this page open and complete each checkpoint in order.
 
+**Prefer a printable guide?** Open or download the illustrated [JP ADMIN Self-Hosted Installation Guide (PDF)](output/pdf/JP-ADMIN-Self-Hosted-Installation-Guide.pdf). It provides the complete installation in 17 beginner-friendly pages with screenshots, success checkpoints, and a troubleshooting table.
+
 > **Safety promise:** setup reuses existing Discord channels before creating missing ones. It does not delete existing channels, messages, Sheet tabs, student rows, or tracker history. Current Discord students can be synchronized even if they never completed intake.
 
 ## What you need
