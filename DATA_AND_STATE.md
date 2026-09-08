@@ -1,7 +1,7 @@
 # Data, Environment, and State Contracts
 
 The complete Apps Script source is stored in `Code-v19-FINAL.gs`; its internal
-backend version is now `v48`. This document records the contract shared by that
+backend version is now `v55`. This document records the contract shared by that
 backend and all bot callers. If an action or response changes, update both sides,
 the contract tests, and the deployed Apps Script Web App version.
 
@@ -169,13 +169,14 @@ base channel map.
   such as Script Lock contention. Timeout/lock retries include a 15-second
   remote-completion grace because aborting the HTTP wait does not cancel an
   Apps Script execution. One isolated `unauthorized` response is confirmed
-  once on safe requests; a persistent rejection stops after that confirmation.
+  through the same bounded five attempts on safe requests; a persistent wrong
+  key still stops after that sequence.
   Retry URLs carry harmless cache-busting parameters. Non-idempotent writes are
   never retried by default.
 - Callers expect JSON. A persistent HTML/DOCTYPE or `Unexpected token '<'`
   usually means a stale deployment, incorrect Web App access setting, or an
   archived/wrong `/exec` URL; a one-off occurrence can be a Google edge error.
-- `doctor.js` currently expects backend health version `v48`.
+- `doctor.js` currently expects backend health version `v55`.
 - API executions open the explicitly stored `JP_SPREADSHEET_ID`; they do not
   depend on an active editor spreadsheet in Web App requests.
 - Enrollment and attendance response-tab names are stored separately so copied
@@ -193,7 +194,7 @@ base channel map.
 | `formstatus` | attendance/form control/doctor | Active form ID/title/link and accepting state. |
 | `openform` | `formcontrol.js` | Opens active form and returns link/status. |
 | `closeform` | `formcontrol.js` | Closes active form. |
-| `attendance` | attendance/reporter | Present/absent/history/interview summary. History uses only recorded matrix dates on or before the report date, merges duplicate rows/date columns, and honors updated P/L marks. Same-day duplicate Form submissions use the latest answer; an explicit “No interview faced today” confirmation vetoes a contradictory Yes. |
+| `attendance` | attendance/reporter | Present/absent/history/interview summary. The immutable Form Timestamp controls the date; a wrong editable date is audit-only. Unmatched/ambiguous identities are rejected as non-attendance and remain absent without blocking other students. A missing/corrupt immutable Timestamp still stops safely. History uses only recorded matrix dates on or before the report date, merges duplicate rows/date columns, and honors updated P/L marks. Same-day duplicate Form submissions use the latest answer; an explicit “No interview faced today” confirmation vetoes a contradictory Yes. |
 | `attendanceaudit` | `attendance.js` | Private, non-posting audit for one date: Discord-review linkage, active Bot_Map students, Attendance row readiness/duplicates, response identity matches, and invalid dates. |
 | `pipelineaudit` | `attendance.js` | Private combined health view for Discord identity/color activity, Attendance, job tracker links/daily counts, outreach events, and interview events. It returns contact data only to the authorized bot-admin command. |
 | `absences` | `attendance.js` | Private date-bounded active-student absence records with phone/username, recorded-session count, longest streak, and absent dates. Accepts `start`, `end`, and guild ID for manual exclusions. |

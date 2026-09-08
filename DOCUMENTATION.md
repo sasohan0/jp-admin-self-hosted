@@ -1,6 +1,6 @@
 # JP ADMIN — EJP Mentorship Bot Documentation
 
-**Version:** v3.30 (bot) / v48 expected by `!doctor` (Apps Script) · **Updated:** August 2026
+**Version:** v3.31 (bot) / v55 expected by `!doctor` (Apps Script) · **Updated:** September 2026
 **Stack:** Node.js (discord.js) on Render Free · Google Sheets + Apps Script (database, API, and scheduled wake-up) · Groq AI (llama-3.3-70b)
 
 ---
@@ -111,7 +111,7 @@ STRIDE data-collection fields. OAuth supplies the immutable username, and the
 portal keeps its own rules commitment instead of duplicating the old manual
 Discord questions.
 **Forms/Attendance:** `!setupcohortsheet [Sheet URL]` · `!setupcohortsheet cleanup confirm` · `!setupcohortsheet fresh confirm [Sheet URL]` · `!formtemplate` (show/add/edit/remove/move/help/title/description/collectemail/validate/restorecore/save/load/list/delete/reset) · `!createforms attendance [name]` (portal cohorts) · `!createforms <name>` (legacy two-Form mode) · `!designforms <description>` · `!forms` · `!forms use <number|id>` · `!forms link <edit URL|id>` · `!openform` · `!closeform` (closes + posts) · `!closeform silent` (closes only) · `!formstatus` · `!attendance` · private `!checkattendance [YYYY-MM-DD]` / `!repairattendance` · private `!checkpipelines [YYYY-MM-DD] [all]` / `!repairpipelines` · private `!absent [current|previous|YYYY-MM-DD|july week 1]` · `!setupsheets existing` / `!setupsheets empty confirm` · `!arrangesheets`
-Attendance uses the freshly synchronized guild roster at both Apps Script and Discord publication boundaries. Students already inactive before the report are absent from its total and mentions; a student deactivated by the warning run after today's report appears today once and is excluded afterward.
+Attendance uses the freshly synchronized guild roster at both Apps Script and Discord publication boundaries. Students already inactive before the report are absent from its total and mentions; a student deactivated by the warning run after today's report appears today once and is excluded afterward. The immutable Google Form Timestamp controls the attendance day even when the editable date answer is wrong. An unmatched or ambiguous email is privately rejected, counts as no attendance, and leaves that student absent without blocking the valid cohort report; a missing/corrupt immutable Timestamp still stops safely.
 **Outreach/Jobs/Interviews:** `!backfilloutreach [N days]`, `!backfillinterviews [N days]`, and `!backfilljobsheets [N days]` default to the latest **3 cohort calendar days** and accept **1-30 days** (for example, `!backfilloutreach 7 days`). They stop reading when Discord history reaches an older date and never clear or overwrite older durable events. Outreach/interview IDs remain idempotent; jobs saves only the newest tracker link in the selected window and does not change older daily counts. `!outreachcheck` · `!jobscheck [YYYY-MM-DD]` (student-facing and pings; optional date recovers a missed run) · `!checkjobsheets [YYYY-MM-DD]` (private, no pings/writes). Every job check automatically reconciles the same recent three-day window first. Interview and outreach history silently reconcile the same window every calendar day at 22:50, including holidays/weekends.
 **Activity follow-up:** `!activityprompt outreach|interview|communication|all` · `!activitycheck attendance|jobs|interviews|all`
 **Private mailer:** `!mailer status|enable|disable|quota` · `!mailer to|cc|bcc <emails|none>` · `!mailer replyto|sender|mentor|phone <value>` · `!mailer template|preview absent|warning1|warning2|inactive` · `!mailer send absent|warnings|all [YYYY-MM-DD]`. The reusable sender default is **Job Placement — Programming Hero**, and `solih@programming-hero.com` is always included in CC; `cc none` removes only additional CC addresses. Students are always BCC-only. Gmail hides BCC from received copies; inspect the Apps Script sender account's **Sent** copy or the bot-admin TSV/`Mailer_Log` audit. The confirmation reconciles the full Attendance absence total against eligible, already-inactive/excluded, invalid-email, duplicate-email, and unresolved rows, and attaches a private TSV with every recipient or skipped reason. Automatic mail waits until the attendance warning classification finishes; warning recipients do not also receive the absence email.
@@ -202,7 +202,7 @@ and `!set rtbrtop`.
 
 **Rule of thumb: invite the bot with Administrator — all permission hassle disappears.**
 
-1. **Google:** create a Sheet → paste local backend v54 → CONFIG:
+1. **Google:** create a Sheet → paste local backend v55 → CONFIG:
    cohort name, blank FORM_ID if the bot creates Forms, new private SECRET_KEY
    → Deploy →
    **New deployment** → Web app → Execute as Me → **Anyone** → copy `/exec`

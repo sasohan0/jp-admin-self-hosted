@@ -68,16 +68,31 @@ test('safe requests confirm one isolated authorization rejection', async () => {
   assert.deepEqual(delays, [RETRY_DELAYS_MS[0]]);
 });
 
-test('persistent authorization rejection stops after the confirmation attempt', async () => {
+test('safe request can recover after several stale-deployment authorization rejections', async () => {
+  let calls = 0;
+  const result = await appsScriptGet(cohort, { action: 'health' }, {
+    fetchImpl: async () => {
+      calls++;
+      return calls < 4
+        ? response(200, JSON.stringify({ error: 'unauthorized' }))
+        : response(200, JSON.stringify({ ok: true }));
+    },
+    sleepImpl: async () => {},
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls, 4);
+});
+
+test('persistent authorization rejection remains bounded', async () => {
   let calls = 0;
   await assert.rejects(
     appsScriptGet(cohort, { action: 'health' }, {
       fetchImpl: async () => { calls++; return response(200, JSON.stringify({ error: 'unauthorized' })); },
       sleepImpl: async () => {},
     }),
-    /unauthorized.*after 2 attempts/,
+    /unauthorized.*after 5 attempts/,
   );
-  assert.equal(calls, 2);
+  assert.equal(calls, DEFAULT_RETRY_ATTEMPTS);
 });
 
 test('idempotent writes retry transient Apps Script lock errors with a completion grace', async () => {

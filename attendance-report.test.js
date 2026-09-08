@@ -3,10 +3,35 @@ const assert = require('node:assert/strict');
 
 const {
   attendanceSegments,
+  attendanceResponsePolicy,
   conflictingAttendanceIdentities,
   parseAttendancePublication,
   reconcileAttendanceRoster,
 } = require('./attendance');
+
+test('unmatched identities are rejected without blocking attendance', () => {
+  assert.deepEqual(attendanceResponsePolicy({
+    identityIssues: [{ row: 10 }],
+  }), {
+    backendBlocked: false,
+    blockReason: '',
+    rejectedIdentityResponses: 1,
+    invalidTimestampRows: 0,
+  });
+});
+
+test('a backend-blocked invalid Timestamp cannot be published as everyone present', () => {
+  assert.deepEqual(attendanceResponsePolicy({
+    blocked: true,
+    blockReason: 'invalid-timestamps',
+    invalidDateRows: [{ row: 11 }],
+  }), {
+    backendBlocked: true,
+    blockReason: 'invalid-timestamps',
+    rejectedIdentityResponses: 0,
+    invalidTimestampRows: 1,
+  });
+});
 
 test('attendance excludes students already inactive while retaining today active students', () => {
   const cohort = { guildId: 'guild', supervisorIds: ['900'] };

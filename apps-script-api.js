@@ -123,11 +123,12 @@ async function requestJson(cohort, options = {}) {
       throw error;
     } catch (error) {
       lastError = error;
-      // Confirm one isolated authentication rejection on a safe request. A
-      // persistent wrong key still fails fast on the second response; a brief
-      // Apps Script deployment/routing inconsistency no longer loses an event.
-      const confirmAuthorization = retryable && attempt === 1 && isAuthorizationError(error);
-      if (!retryable || attempt >= attempts || (!shouldRetry(error) && !confirmAuthorization)) break;
+      // Google has occasionally routed several consecutive safe requests to a
+      // stale deployment that rejects the current key. Retry authentication
+      // rejections only for reads/idempotent writes; unsafe writes still fail
+      // once, while a genuinely wrong key fails after the bounded sequence.
+      const retryAuthorization = retryable && isAuthorizationError(error);
+      if (!retryable || attempt >= attempts || (!shouldRetry(error) && !retryAuthorization)) break;
       await sleepImpl(retryDelayFor(error, attempt));
     }
   }

@@ -21,7 +21,7 @@ const { getSetupDate } = require('./state');
 const { getIntakeSettings, portalBaseUrl, portalConfigProblems, validateIntakeBackend } = require('./intake-settings');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
 
-const EXPECTED_VERSION = 'v54';
+const EXPECTED_VERSION = 'v55';
 const REQUIRED_PERMS = ['ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory'];
 
 function formatRosterDoctor(roster, review) {

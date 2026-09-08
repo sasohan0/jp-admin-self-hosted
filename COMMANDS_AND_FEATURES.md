@@ -138,7 +138,7 @@ an explicit Discord action before identity/readiness roles are applied.
 | `!closeform` | `formcontrol.js` | Closes the current server's active form and posts or edits that date's attendance after 30 seconds. |
 | `!closeform silent` | `formcontrol.js` | Closes only the current server's active form and confirms privately without posting or scheduling an attendance report. |
 | `!formstatus` | `formcontrol.js` | Shows only the current server's active form open/closed state. |
-| `!attendance [YYYY-MM-DD]` | `attendance.js` | Rechecks today or a requested previous date and edits that date's durable public report without repeating notifications. Same-name present/absent account collisions fail closed for private review. |
+| `!attendance [YYYY-MM-DD]` | `attendance.js` | Rechecks today or a requested previous date and edits that date's durable public report without repeating notifications. Unmatched/ambiguous email identities are privately rejected and remain absent without blocking valid students; same-name present/absent account collisions still fail closed. |
 | `!checkattendance [YYYY-MM-DD]` | `attendance.js` | Private read-only readiness report. Attendance day always comes from the immutable Google Form `Timestamp`; the editable attendance-date answer never controls counting. The audit lists timestamp/date corrections, duplicate submissions, identity issues, matrix P values, and copyable contacts. It never pings students. |
 | `!repairattendance` | `attendance.js` | Adds every active Discord-linked Bot_Map student to Attendance and refreshes Name/Email/Phone without changing date columns, P/L values, or the dedicated mentor-editable Remarks column. |
 | `!checkpipelines [YYYY-MM-DD] [all]` | `attendance.js` | Private combined audit of Discord identity, color activity, Attendance, job tracker links/saved counts, outreach events, and interview events. It lists problems by default; `all` includes every active student. A broken attendance response tab is reported without hiding the other pipelines. |
@@ -154,7 +154,10 @@ an explicit Discord action before identity/readiness roles are applied.
 Attendance identity matching prefers a normalized email or Discord ID, then a
 unique Discord username, then a unique normalized student-name alias (including
 common `Md`/`Mst` prefixes and Discord decoration). An ambiguous or unmatched
-answer is never guessed; it is reported privately in `#bot-admin`.
+answer is never guessed; it is reported privately in `#bot-admin`, does not
+count as present, and does not block the report. The immutable Form Timestamp
+controls the day even when the editable date answer is wrong; only a
+missing/corrupt immutable Timestamp stops the run.
 `!attendance` also reconciles every active Discord-linked student into the
 Attendance matrix before marking matched P values. An intentionally colored
 Email identity cell in `Bot_Map` or `Attendance` makes the row inactive and
@@ -179,7 +182,7 @@ absence command counts recorded session columns rather than calendar days.
 | Message in configured `#outreach-update` / `#outreach-updates` | `outreach.js` | Logs the roster member's outreach activity; the `channel_outreach` runtime override wins for both live logging and history backfill. |
 | `!backfilloutreach [N days]` | `outreach.js` | Reconciles the latest three cohort calendar days by default; 1-30 days select an explicit inclusive window. Pagination stops at the first older date. Each in-window Discord message ID is idempotent; older events are neither scanned nor overwritten. |
 | `!outreachcheck` | `outreach.js` | Runs the stale/never-outreached report immediately. |
-| Successful outreach/job/interview write | Apps Script v48 | Keeps all three activity matrices synchronized with their durable logs. Bot writes are serialized per cohort and long idempotent activity/roster writes use a three-minute timeout. Outreach retries and interview history backfills repair downstream views by immutable message identity. Active job/outreach rows below 10 total over the latest three recorded dates turn light red; inactive rows in all matrices are dark red until mentor activation. |
+| Successful outreach/job/interview write | Apps Script v55 | Keeps all three activity matrices synchronized with their durable logs. Bot writes are serialized per cohort and long idempotent activity/roster writes use a three-minute timeout. Outreach retries and interview history backfills repair downstream views by immutable message identity. Active job/outreach rows below 10 total over the latest three recorded dates turn light red; inactive rows in all matrices are dark red until mentor activation. |
 
 | Tracker link in `#job-tracking-sheet` | `jobs.js` | Stores the member's latest Sheet ID and selected tab `gid`. A link without `gid` is explicitly acknowledged as using the default/first visible tab and appears as `DEFAULT` in `Job_Sheets`. If the immediate backend write exhausts transient retries, the durable Discord message is reconciled automatically from recent history before the next job check; the student is not asked to repost. |
 | `!backfilljobsheets [N days]` | `jobs.js` | Scans the latest three cohort calendar days by default, or an explicit 1-30-day window, and saves the newest in-window tracker link per student. Pagination stops at the first older date; existing daily job history is untouched. |

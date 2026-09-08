@@ -211,7 +211,7 @@ checked during changes.
 `roster.js` loads `Bot_Map` plus manual exclusions through one `action=roster`
 execution and caches them for ten minutes. Discord membership is the active
 roster source of truth. `!syncmembers` submits only current non-bot,
-non-supervisor members to Apps Script v48, which corroborates current or
+non-supervisor members to Apps Script v55, which corroborates current or
 archived Discord IDs, unique normalized names, `All Data`, and enrollment
 identity fields before rebuilding `Bot_Map`. `All Data` is the preferred
 contact/location source and `Bot_Map Archive` fills missing historical region
@@ -273,10 +273,13 @@ attendance result from Apps Script and posts a summary plus real absent mentions
 Scheduled reminders alert supervisors if the form state is not as expected.
 The backend resolves attendance through collected email, the configured answer,
 exact roster name, Discord username, or Discord ID. Ambiguous/unmatched answers
-are never guessed and are returned only for a private bot-admin review notice.
+are never guessed, never count as present, and are returned only for a private
+bot-admin review notice; they do not block the valid cohort report.
 Attendance form submissions themselves do not mutate the matrix. The immutable
 Google Forms `Timestamp` always determines the attendance day; the editable
-date answer is audit-only and can never move a response. The report
+date answer is audit-only and can never move a response. A missing/corrupt
+immutable Timestamp still fails closed because its calendar day cannot be
+proven. The report
 request performs one idempotent batch matrix reconciliation. Rolling history
 uses only recorded matrix dates on or before the report date and merges
 duplicate student/date cells with P/L precedence. The latest same-day Form
@@ -284,7 +287,7 @@ submission controls mood/interview summaries, and an explicit no-interview
 confirmation vetoes a contradictory Yes. The shared form trigger continues to
 process enrollment submissions.
 
-Apps Script v48 also exposes a private date-bounded absence report and
+Apps Script v55 also exposes a private date-bounded absence report and
 attendance roster/response audit. The Node
 side parses `current`, `previous`, a date, or month-week phrases such as
 `july week 1`, then renders contact-rich TSV only inside `#bot-admin`. After
@@ -295,7 +298,7 @@ three-or-more recorded-session absence runs from the current or previous week;
 Form definitions originate in `form-templates.js`. `cohort-admin.js` stores the
 working enrollment and attendance definitions separately in guild-namespaced
 Apps Script state and can copy them into named reusable pairs. Creation sends a
-validated definition to Apps Script v48, which supports text, paragraph,
+validated definition to Apps Script v55, which supports text, paragraph,
 choice, checkbox, scale, date, and time fields. Semantic field keys are saved
 with the created Forms so edited student-facing wording does not break roster
 or attendance header lookup.

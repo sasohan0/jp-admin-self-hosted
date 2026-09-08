@@ -38,9 +38,9 @@ const EXPECTED_ACTIONS = [
   'mailerstatus', 'sendCohortEmailBatch',
 ];
 
-test('Apps Script v54 source parses and exposes every bot API action', () => {
+test('Apps Script v55 source parses and exposes every bot API action', () => {
   assert.doesNotThrow(() => new Function(source));
-  assert.match(source, /const VERSION = 'v54'/);
+  assert.match(source, /const VERSION = 'v55'/);
   assert.match(source, /body\.action === 'saveDawnAttendance'/);
   assert.match(source, /body\.action === 'saveDawnMembershipEvent'/);
   assert.match(source, /body\.action === 'repairDawnAttendance'/);
@@ -501,6 +501,11 @@ test('attendance resolves roster identity aliases and excludes colored rows from
   assert.match(source, /function matrixPresentOnDate\(/);
   assert.match(source, /notPresentStudents: notPresentStudents/);
   assert.match(source, /unique name alias/);
+  const todayAttendance = extractFunction('getTodayAttendance');
+  assert.match(todayAttendance, /blockReason:\s*'invalid-timestamps'/);
+  assert.doesNotMatch(todayAttendance, /if \(analysis\.identityIssues\.length \|\|/);
+  assert.match(todayAttendance, /syncAttendanceMatrix\(today, presentSet, roster\)/);
+  assert.match(todayAttendance, /identityIssues:\s*analysis\.identityIssues/);
   assert.match(source, /s\.active === false/);
   assert.doesNotMatch(source, /function onFormSubmit\(e\) \{\s*Utilities\.sleep/);
   const submitFunction = source.match(/function onFormSubmit\(e\) \{[\s\S]*?\n\}/);

@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v54 - Gmail-audited cohort mail)
+//  JP ADMIN SHEET + BOT API (v55 - resilient attendance rejection policy)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v54';
+const VERSION = 'v55';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -7690,14 +7690,15 @@ function getTodayAttendance(guildId) {
   const moodCount = analysis.moodCount;
   const interviews = analysis.interviews;
 
-  // Never mutate the matrix or calculate a public absent list while a real
-  // response cannot be dated or tied to one student. The caller will present
-  // the private diagnostics and stop without pinging anyone.
-  if (analysis.identityIssues.length || analysis.invalidDateRows.length) {
+  // The immutable Google Form Timestamp is authoritative; the editable date
+  // answer is already ignored/corrected above. A corrupt Timestamp is the one
+  // date condition that must stop because its calendar day cannot be proven.
+  if (analysis.invalidDateRows.length) {
     return {
       cohort: CONFIG.COHORT,
       date: today,
       blocked: true,
+      blockReason: 'invalid-timestamps',
       present: [],
       leave: [],
       absent: [],
@@ -7716,6 +7717,9 @@ function getTodayAttendance(guildId) {
     };
   }
 
+  // Unmatched/ambiguous identities never count as present, but one wrong email
+  // must not deny service to the complete cohort. The student remains absent
+  // unless another valid response or an existing manual P/L mark exists.
   syncAttendanceMatrix(today, presentSet, roster);
   const absenceFlags = refreshAttendanceAbsenceFlags();
   const history = getRecentHistory(today);

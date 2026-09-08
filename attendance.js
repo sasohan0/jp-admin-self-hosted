@@ -52,6 +52,15 @@ function attendanceNameKey(value) {
     .trim();
 }
 
+function attendanceResponsePolicy(data) {
+  return {
+    backendBlocked: data?.blocked === true,
+    blockReason: String(data?.blockReason || ''),
+    rejectedIdentityResponses: (data?.identityIssues || []).length,
+    invalidTimestampRows: (data?.invalidDateRows || []).length,
+  };
+}
+
 // A same-name active account in both present and absent results is usually a
 // duplicate Discord account. Never guess which account should be removed and
 // never publicly accuse the absent account until a supervisor resolves it.
@@ -366,7 +375,7 @@ function setupAttendance(client) {
             footer: {
               text: ready
                 ? 'Attendance-ready: every active student has one usable row and today has no unmatched response.'
-                : 'Run !repairattendance for missing rows; duplicates, invalid dates, and unmatched responses require review.',
+                : 'Run !repairattendance for missing rows. Unmatched identities are rejected; editable dates use the Form Timestamp.',
             },
             timestamp: new Date().toISOString(),
           }],
@@ -710,7 +719,7 @@ async function postAttendance(client, cohort, requestedDate = '') {
       );
       for (const chunk of chunkLines([
         `⚠️ **Attendance identity review — ${data.date}**`,
-        'These submissions could not be matched uniquely. No student was guessed; correct the response or Bot_Map identity, then run `!attendance` again.',
+        'These submissions were rejected because they did not match one active roster identity. No student was guessed; the affected student remains absent unless another valid response or manual P/L mark exists.',
         ...issueLines,
       ], 1900)) {
         await admin.send({ content: chunk, allowedMentions: { parse: [] } });
@@ -723,7 +732,7 @@ async function postAttendance(client, cohort, requestedDate = '') {
       );
       for (const chunk of chunkLines([
         `⚠️ **Attendance date review — ${data.date}**`,
-        'These response rows have non-empty dates the bot could not parse. They were not counted.',
+        'These rows have missing/corrupt immutable Google Form Timestamps, so their calendar day cannot be proven. Editable student-selected dates never override the Timestamp.',
         ...dateLines,
         ...(data.invalidDateRows.length > dateLines.length
           ? [`…and ${data.invalidDateRows.length - dateLines.length} more`] : []),
@@ -749,15 +758,20 @@ async function postAttendance(client, cohort, requestedDate = '') {
       await admin.send({ content: lines.join('\n'), allowedMentions: { parse: [] } });
     }
 
-    // A response that cannot be dated or tied to exactly one student makes an
-    // absent list unsafe. Stop privately instead of publicly accusing anyone.
-    if (data.identityIssues?.length || data.invalidDateRows?.length) {
+    const responsePolicy = attendanceResponsePolicy(data);
+    // Never interpret a backend's deliberately empty blocked lists as everyone
+    // present. v55 blocks only missing/corrupt immutable timestamps; an older
+    // backend may also block an unmatched email and must be upgraded first.
+    if (responsePolicy.backendBlocked) {
       const admin = await client.channels.fetch(cohort.channels.supervisor);
+      const reason = responsePolicy.blockReason === 'invalid-timestamps'
+        ? 'One or more immutable Google Form Timestamps are missing or corrupt. Correct the response-sheet Timestamp evidence, then rerun `!attendance`.'
+        : 'This Apps Script deployment still uses the older all-or-nothing email policy. Deploy backend v55, then run `!attendance` again.';
       await admin.send({
-        content: '⛔ **Public attendance report stopped.** Resolve the unmatched/invalid response rows above, then run `!attendance` again. No student was pinged as absent.',
+        content: `⛔ **Public attendance report stopped.** ${reason} No student was pinged as absent.`,
         allowedMentions: { parse: [] },
       });
-      return { posted: false, date: data.date, reason: 'unsafe-response-rows' };
+      return { posted: false, date: data.date, reason: responsePolicy.blockReason || 'legacy-backend-blocked' };
     }
 
     const currentRoster = await getRoster(cohort);
@@ -873,6 +887,7 @@ module.exports = {
   attendanceIdentityKey,
   attendanceNameKey,
   conflictingAttendanceIdentities,
+  attendanceResponsePolicy,
   attendanceSegments,
   parseAttendancePublication,
   reconcileAttendanceRoster,
