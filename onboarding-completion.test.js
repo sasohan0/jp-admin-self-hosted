@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const source = fs.readFileSync(require.resolve('./onboarding'), 'utf8');
 const {
   categorizeOnboarding, isRoleProfileComplete, onboardingRoleNeeds,
-  recordWithAssignedRoles, waitForRoleProfile,
+  recordWithAssignedRoleNames, recordWithAssignedRoles, waitForRoleProfile,
 } = require('./onboarding');
 
 test('combined completion reminder targets only the incomplete union', () => {
@@ -74,6 +74,29 @@ test('status trusts complete bot-managed roles when an older backend omitted onb
   assert.equal(isRoleProfileComplete(recovered), true);
   assert.equal(recovered.division, 'Khulna');
   assert.deepEqual(recovered.skills, ['JavaScript']);
+});
+
+test('a partial legacy answer preserves role categories it did not explicitly replace', () => {
+  const effective = recordWithAssignedRoleNames({
+    userId: '123', division: 'Mymensingh', availability: 'limited',
+  }, [
+    'Division · Mymensingh', 'Availability · Limited', 'Work Mode · Hybrid',
+    'English · Basic', 'Skill · Laravel', 'Skill · Node.js',
+  ]);
+  assert.equal(effective.jobFocus, 'hybrid');
+  assert.equal(effective.englishLevel, 'basic');
+  assert.deepEqual(effective.skills, ['Laravel', 'Node.js']);
+  assert.deepEqual(onboardingRoleNeeds(effective, [
+    'Division · Mymensingh', 'Availability · Limited', 'Work Mode · Hybrid',
+    'English · Basic', 'Skill · Laravel', 'Skill · Node.js',
+  ]).stale, []);
+});
+
+test('supervisors can restore one or all current role profiles from structured intake', () => {
+  assert.match(source, /!restorerolesfromintake/);
+  assert.match(source, /action: 'getIntakeRoleProfiles'/);
+  assert.match(source, /onboardingAnswers\(source\.answers/);
+  assert.match(source, /allowedMentions: \{ parse: \[\] \}/);
 });
 
 test('targeted onboarding reminder and role repair stay separate from profile reminders', () => {

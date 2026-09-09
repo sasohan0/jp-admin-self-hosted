@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v57 - dated backend uptime overrides)
+//  JP ADMIN SHEET + BOT API (v58 - intake role restoration)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v57';
+const VERSION = 'v58';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -5048,6 +5048,43 @@ function updateIntakeApplicationStatus(body) {
   });
 }
 
+function getIntakeRoleProfiles(discordIds) {
+  const requested = {};
+  (discordIds || []).slice(0, 500).forEach(function (value) {
+    const id = normalizeDiscordId(value);
+    if (id) requested[id] = true;
+  });
+  if (!Object.keys(requested).length) return { profiles: [] };
+  const sheet = SpreadsheetApp.getActive().getSheetByName(intakeResponsesName());
+  if (!sheet || sheet.getLastRow() < 2) return { profiles: [] };
+  const values = sheet.getDataRange().getDisplayValues();
+  const headers = values[0].map(String);
+  const idIndex = headers.indexOf('Discord ID');
+  const updatedIndex = headers.indexOf('Updated At');
+  if (idIndex < 0) return { error: 'Intake Responses has no Discord ID column' };
+  const allowedKeys = {
+    region: true, subregion: true, genderPreference: true, studyStage: true,
+    availability: true, jobFocus: true, englishCommunication: true, technologies: true,
+  };
+  const latest = {};
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
+    const id = normalizeDiscordId(values[rowIndex][idIndex]);
+    if (!requested[id]) continue;
+    const stamp = updatedIndex >= 0 ? String(values[rowIndex][updatedIndex] || '') : '';
+    if (latest[id] && latest[id].stamp > stamp) continue;
+    const answers = {};
+    headers.forEach(function (header, columnIndex) {
+      const match = String(header).match(/\[([a-zA-Z0-9_]+)\]\s*$/);
+      const key = match && match[1];
+      if (key && allowedKeys[key]) answers[key] = String(values[rowIndex][columnIndex] || '');
+    });
+    latest[id] = { discordId: id, stamp: stamp, answers: answers };
+  }
+  return {
+    profiles: Object.keys(latest).map(function (id) { return latest[id]; }),
+  };
+}
+
 function saveOnboardingFromIntake(guildId, discordId, input) {
   guildId = normalizeDiscordId(guildId);
   discordId = normalizeDiscordId(discordId);
@@ -7229,6 +7266,9 @@ function doPostInner(e) {
   }
   if (body.action === 'updateIntakeApplicationStatus') {
     return json(updateIntakeApplicationStatus(body));
+  }
+  if (body.action === 'getIntakeRoleProfiles') {
+    return json(getIntakeRoleProfiles(body.discordIds || []));
   }
   if (body.action === 'recordProfileSurveyDeliveries') {
     return json(recordProfileSurveyDeliveries(body.items || []));

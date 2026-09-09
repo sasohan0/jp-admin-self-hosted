@@ -15,7 +15,8 @@ const {
 } = require('discord.js');
 const { cohorts } = require('./config');
 const { fetchGuildMembers } = require('./discord-members');
-const { appsScriptGet } = require('./apps-script-api');
+const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
+const { onboardingAnswers } = require('./intake-schema');
 const { syncMembers } = require('./roster');
 const { channelSurveyButton } = require('./student-data-survey');
 const {
@@ -159,19 +160,25 @@ function isRoleProfileComplete(record) {
   return missingRoleProfileFields(record).length === 0;
 }
 
-function recordWithAssignedRoles(record, member) {
+function recordWithAssignedRoleNames(record, roleNames) {
   const current = roleProfile(record || {});
-  const assigned = profileFromRoleNames(
-    [...(member?.roles?.cache?.values?.() || [])].map(role => role.name));
+  const assigned = profileFromRoleNames(roleNames);
   return {
     ...(record || {}),
-    userId: String(record?.userId || member?.id || ''),
     division: current.division || assigned.division,
     subregion: current.subregion || assigned.subregion,
     availability: current.availability || assigned.availability,
     jobFocus: current.jobFocus || assigned.jobFocus,
     englishLevel: current.englishLevel || assigned.englishLevel,
     skills: current.skills.length ? current.skills : assigned.skills,
+  };
+}
+
+function recordWithAssignedRoles(record, member) {
+  return {
+    ...recordWithAssignedRoleNames(record,
+      [...(member?.roles?.cache?.values?.() || [])].map(role => role.name)),
+    userId: String(record?.userId || member?.id || ''),
   };
 }
 
@@ -267,7 +274,10 @@ async function applyReadinessRole(member, availability) {
 
 async function applyProfileRoles(member, input) {
   await member.guild.roles.fetch();
-  const profile = roleProfile(input);
+  // A partially saved legacy questionnaire is not evidence that an omitted
+  // category should be erased. Preserve exact managed roles for categories
+  // absent from the record; an explicitly supplied replacement still wins.
+  const profile = roleProfile(recordWithAssignedRoles(input, member));
   const names = expectedRoleNames(profile);
   const roles = [];
   for (const name of names) roles.push(await ensureRole(member.guild, name));
@@ -483,13 +493,14 @@ function rulesOnlyComponents(rulesUrl) {
 
 function onboardingRoleNeeds(record, roleNames = []) {
   const names = new Set(roleNames);
-  const expected = expectedRoleNames(record);
+  const effective = recordWithAssignedRoleNames(record, roleNames);
+  const expected = expectedRoleNames(effective);
   return {
     missing: expected.filter(name => !names.has(name)),
     stale: [...names].filter(name =>
       (isManagedProfileRoleName(name) || String(name).startsWith(LEGACY_IDENTITY_PREFIX)) &&
       !expected.includes(name)),
-    profileFields: missingRoleProfileFields(record),
+    profileFields: missingRoleProfileFields(effective),
   };
 }
 
@@ -561,7 +572,7 @@ function enqueue(key, task) {
 
 async function processOnboardingAnswer(client, interaction, cohort, field, value) {
   const member = await interaction.guild.members.fetch(interaction.user.id);
-  let record = await loadRecord(cohort, interaction.user.id);
+  let record = recordWithAssignedRoles(await loadRecord(cohort, interaction.user.id), member);
   if (field === 'rulesAccepted') record.rulesAccepted = true;
   else record[field] = field === 'skills' ? [...new Set(value)] : value;
   if (field === 'division' && value !== 'Dhaka') record.subregion = '';
@@ -917,6 +928,59 @@ async function runRoleRepairCommand(msg, client, cohort) {
   return msg.channel.send({ content: lines.join('\n').slice(0, 1990), allowedMentions: { parse: [] } });
 }
 
+async function restoreRolesFromIntake(msg, cohort) {
+  const content = msg.content.trim();
+  const all = /^!restorerolesfromintake\s+all$/i.test(content);
+  const targetId = msg.mentions.users.first()?.id ||
+    content.match(/^!restorerolesfromintake\s+(\d{16,22})$/i)?.[1];
+  if (!all && !targetId) {
+    return msg.reply('Usage: `!restorerolesfromintake @student`, `!restorerolesfromintake <Discord ID>`, or `!restorerolesfromintake all`.');
+  }
+  const members = await fetchGuildMembers(msg.guild);
+  const targets = [...members.values()].filter(member =>
+    !member.user.bot && !cohort.supervisorIds.includes(member.id) && (all || member.id === targetId));
+  if (!targets.length) return msg.reply('No matching current student was found in this cohort.');
+  await msg.reply({
+    content: `Restoring role profiles from the latest structured intake response for **${targets.length}** current student(s)...`,
+    allowedMentions: { parse: [] },
+  });
+  const data = await appsScriptPost(cohort, {
+    action: 'getIntakeRoleProfiles',
+    discordIds: targets.map(member => member.id),
+  }, { idempotent: true, label: 'Intake role-profile recovery' });
+  const byId = new Map((data.profiles || []).map(profile => [String(profile.discordId), profile]));
+  let restored = 0;
+  const missing = [];
+  const failures = [];
+  for (const member of targets) {
+    const source = byId.get(member.id);
+    if (!source) { missing.push(member.user.username); continue; }
+    const restoredProfile = onboardingAnswers(source.answers || {});
+    const absent = missingRoleProfileFields(restoredProfile);
+    if (absent.length) {
+      missing.push(`${member.user.username} (${absent.join(', ')})`);
+      continue;
+    }
+    try {
+      const existing = await loadRecord(cohort, member.id);
+      const record = { ...existing, ...restoredProfile, userId: member.id };
+      await saveRecord(cohort, record);
+      await reconcileProfileRoles(cohort, member, record);
+      restored += 1;
+    } catch (error) {
+      failures.push(`${member.user.username}: ${error.message}`);
+    }
+  }
+  return msg.channel.send({
+    content: [
+      `✅ Intake role restore finished: **${restored}/${targets.length}** restored.`,
+      missing.length ? `No complete structured intake response: ${missing.slice(0, 15).join('; ')}` : '',
+      failures.length ? `Failures: ${failures.slice(0, 10).join('; ')}` : '',
+    ].filter(Boolean).join('\n').slice(0, 1950),
+    allowedMentions: { parse: [] },
+  });
+}
+
 module.exports = function registerOnboarding(client) {
   const recover = async () => {
     await recoverRoleReminders(client);
@@ -1034,6 +1098,7 @@ module.exports = function registerOnboarding(client) {
     const lower = msg.content.trim().toLowerCase();
     if (!['!onboardingpanel', '!onboardingstatus', '!finalizegroups',
       '!completioncheck', '!completionreminder', '!onboardingrepair'].includes(lower) &&
+        !lower.startsWith('!restorerolesfromintake') &&
         !lower.startsWith('!rolerepair') &&
         !lower.startsWith('!onboardingreminder') &&
         !lower.startsWith('!setrulesmessage') && !lower.startsWith('!resetonboarding')) return;
@@ -1047,6 +1112,7 @@ module.exports = function registerOnboarding(client) {
         return msg.reply(`✅ Onboarding panel ready: ${result.panel.url}\nRules message: ${result.rulesMessage.url}`);
       }
       if (lower === '!onboardingstatus') return postOnboardingStatus(msg, cohort);
+      if (lower.startsWith('!restorerolesfromintake')) return restoreRolesFromIntake(msg, cohort);
       if (lower.startsWith('!onboardingreminder')) {
         const requested = msg.mentions.channels.first();
         const channel = requested || await client.channels.fetch(cohort.channels.discussion);
@@ -1113,6 +1179,7 @@ module.exports.onboardingRoleNeeds = onboardingRoleNeeds;
 module.exports.isRoleProfileComplete = isRoleProfileComplete;
 module.exports.categorizeOnboarding = categorizeOnboarding;
 module.exports.recordWithAssignedRoles = recordWithAssignedRoles;
+module.exports.recordWithAssignedRoleNames = recordWithAssignedRoleNames;
 module.exports.waitForRoleProfile = waitForRoleProfile;
 module.exports.repairOnboardingRoles = repairOnboardingRoles;
 module.exports.sendOnboardingReminder = sendOnboardingReminder;

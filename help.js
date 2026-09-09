@@ -46,6 +46,7 @@ const SECTIONS = [
     ['!checkperms', "Report the bot's permissions in every configured channel"],
     ['!onboardingpanel', 'Create or refresh the welcome panel and exact rules link'],
     ['!onboardingstatus', 'Private completion, division, availability, and role-profile summary'],
+    ['!restorerolesfromintake @student|ID|all', 'Restore managed roles from each student’s latest structured intake response'],
     ['!onboardingreminder [#channel]', 'Mention only members missing private onboarding; defaults to discussion'],
     ['!rolerepair [#channel]', 'Reconcile division, Dhaka-area, availability, work-mode, English and skill roles; mention missing profiles and retry after 2h'],
     ['!onboardingrepair', 'Compatibility alias for !rolerepair'],
