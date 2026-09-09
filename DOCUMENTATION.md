@@ -1,6 +1,6 @@
 # JP ADMIN — EJP Mentorship Bot Documentation
 
-**Version:** v3.33 (bot) / v58 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
+**Version:** v3.33 (bot) / v59 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
 **Stack:** Node.js (discord.js) on Render Free · Google Sheets + Apps Script (database, API, and scheduled wake-up) · Groq AI (llama-3.3-70b)
 
 ---
@@ -215,7 +215,7 @@ and `!set rtbrtop`.
 
 **Rule of thumb: invite the bot with Administrator — all permission hassle disappears.**
 
-1. **Google:** create a Sheet → paste local backend v58 → CONFIG:
+1. **Google:** create a Sheet → paste local backend v59 → CONFIG:
    cohort name, blank FORM_ID if the bot creates Forms, new private SECRET_KEY
    → Deploy →
    **New deployment** → Web app → Execute as Me → **Anyone** → copy `/exec`

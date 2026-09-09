@@ -39,9 +39,9 @@ const EXPECTED_ACTIONS = [
   'mailerstatus', 'sendCohortEmailBatch',
 ];
 
-test('Apps Script v58 source parses and exposes every bot API action', () => {
+test('Apps Script v59 source parses and exposes every bot API action', () => {
   assert.doesNotThrow(() => new Function(source));
-  assert.match(source, /const VERSION = 'v58'/);
+  assert.match(source, /const VERSION = 'v59'/);
   assert.match(source, /body\.action === 'saveDawnAttendance'/);
   assert.match(source, /body\.action === 'saveDawnMembershipEvent'/);
   assert.match(source, /body\.action === 'repairDawnAttendance'/);
@@ -103,6 +103,14 @@ test('backend preserves daily jobs while adding weekly metrics and serialized in
   assert.match(source, /excludedIds: excludedDiscordIds\(guildId\)/);
   assert.match(source, /function getActivityPipelineAudit\(/);
   assert.match(source, /function repairActivityPipelines\(/);
+});
+
+test('intake restoration maps normalized stored keys back to canonical role fields', () => {
+  const helper = extractFunction('getIntakeRoleProfiles');
+  assert.match(helper, /jobfocus: 'jobFocus'/);
+  assert.match(helper, /englishcommunication: 'englishCommunication'/);
+  assert.match(helper, /genderpreference: 'genderPreference'/);
+  assert.match(helper, /studystage: 'studyStage'/);
 });
 
 test('RTBR counts native Sheet Date cells and exposes raw activity beside points', () => {

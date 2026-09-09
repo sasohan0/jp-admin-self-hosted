@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v58 - intake role restoration)
+//  JP ADMIN SHEET + BOT API (v59 - normalized intake role restoration)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v58';
+const VERSION = 'v59';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -5062,9 +5062,15 @@ function getIntakeRoleProfiles(discordIds) {
   const idIndex = headers.indexOf('Discord ID');
   const updatedIndex = headers.indexOf('Updated At');
   if (idIndex < 0) return { error: 'Intake Responses has no Discord ID column' };
-  const allowedKeys = {
-    region: true, subregion: true, genderPreference: true, studyStage: true,
-    availability: true, jobFocus: true, englishCommunication: true, technologies: true,
+  const intakeKeyMap = {
+    region: 'region',
+    subregion: 'subregion',
+    genderpreference: 'genderPreference',
+    studystage: 'studyStage',
+    availability: 'availability',
+    jobfocus: 'jobFocus',
+    englishcommunication: 'englishCommunication',
+    technologies: 'technologies',
   };
   const latest = {};
   for (let rowIndex = 1; rowIndex < values.length; rowIndex++) {
@@ -5075,8 +5081,9 @@ function getIntakeRoleProfiles(discordIds) {
     const answers = {};
     headers.forEach(function (header, columnIndex) {
       const match = String(header).match(/\[([a-zA-Z0-9_]+)\]\s*$/);
-      const key = match && match[1];
-      if (key && allowedKeys[key]) answers[key] = String(values[rowIndex][columnIndex] || '');
+      const storedKey = match && String(match[1]).toLowerCase();
+      const key = intakeKeyMap[storedKey];
+      if (key) answers[key] = String(values[rowIndex][columnIndex] || '');
     });
     latest[id] = { discordId: id, stamp: stamp, answers: answers };
   }
