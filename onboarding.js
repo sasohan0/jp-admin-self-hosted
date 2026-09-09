@@ -158,6 +158,23 @@ function isRoleProfileComplete(record) {
   return missingRoleProfileFields(record).length === 0;
 }
 
+function categorizeOnboarding(eligible, records) {
+  const recordsById = new Map(records.map(record => [String(record.userId), record]));
+  const roleComplete = eligible.filter(member =>
+    isRoleProfileComplete(recordsById.get(member.id) || {}));
+  const completed = roleComplete.filter(member =>
+    Boolean(recordsById.get(member.id)?.rulesAccepted));
+  const roleCompleteIds = new Set(roleComplete.map(member => member.id));
+  const completedIds = new Set(completed.map(member => member.id));
+  return {
+    recordsById,
+    roleComplete,
+    completed,
+    missingProfile: eligible.filter(member => !roleCompleteIds.has(member.id)),
+    rulesPending: eligible.filter(member => roleCompleteIds.has(member.id) && !completedIds.has(member.id)),
+  };
+}
+
 async function waitForRoleProfile(cohort, userId, options = {}) {
   const attempts = Math.max(1, Number(options.attempts) || 5);
   const intervalMs = Math.max(0, Number(options.intervalMs) || 6000);
@@ -439,6 +456,14 @@ function onboardingOnlyComponents(rulesUrl) {
   )];
 }
 
+function rulesOnlyComponents(rulesUrl) {
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setLabel('Read rules & regulations').setStyle(ButtonStyle.Link).setURL(rulesUrl),
+    new ButtonBuilder().setCustomId('onboard:accept_rules_public')
+      .setLabel('I read and accept the rules').setStyle(ButtonStyle.Primary),
+  )];
+}
+
 function onboardingRoleNeeds(record, roleNames = []) {
   const names = new Set(roleNames);
   const expected = expectedRoleNames(record);
@@ -539,26 +564,30 @@ async function postOnboardingStatus(msg, cohort) {
   ]);
   const eligible = [...members.values()].filter(m => !m.user.bot && !cohort.supervisorIds.includes(m.id));
   const eligibleIds = new Set(eligible.map(m => m.id));
-  const completed = records.filter(r => eligibleIds.has(r.userId) && isComplete(r));
+  const eligibleRecords = records.filter(record => eligibleIds.has(String(record.userId)));
+  const categories = categorizeOnboarding(eligible, eligibleRecords);
+  const completedRecords = categories.completed.map(member => categories.recordsById.get(member.id));
+  const roleRecords = categories.roleComplete.map(member => categories.recordsById.get(member.id));
   const byDivision = {};
   const byAvailability = {};
-  for (const r of completed) {
+  for (const r of roleRecords) {
     byDivision[r.division] = (byDivision[r.division] || 0) + 1;
     byAvailability[r.availability] = (byAvailability[r.availability] || 0) + 1;
   }
   const majority = Math.floor(eligible.length / 2) + 1;
-  const missing = eligible.filter(m => !completed.some(r => r.userId === m.id));
-  const reviewRecords = completed.filter(needsAvailabilityReview);
+  const reviewRecords = completedRecords.filter(needsAvailabilityReview);
   const reviewCount = reviewRecords.length;
   const fmt = (obj, labels = {}) => Object.entries(obj).map(([k, v]) => `• ${labels[k] || k}: **${v}**`).join('\n') || '—';
 
   await msg.channel.send({
     embeds: [{
       title: `👋 Onboarding Status — ${cohort.name}`,
-      color: completed.length >= majority ? 0x2ecc71 : 0xe67e22,
+      color: categories.completed.length >= majority ? 0x2ecc71 : 0xe67e22,
       fields: [
-        { name: 'Completed', value: `${completed.length} / ${eligible.length}`, inline: true },
-        { name: 'Role-profile coverage', value: `${completed.length >= majority ? 'Majority reached' : `${majority - completed.length} to majority`}`, inline: true },
+        { name: 'Complete including rules', value: `${categories.completed.length} / ${eligible.length}`, inline: true },
+        { name: 'Role profiles ready', value: `${categories.roleComplete.length} / ${eligible.length}`, inline: true },
+        { name: 'Rules acceptance pending', value: String(categories.rulesPending.length), inline: true },
+        { name: 'Finalization threshold', value: `${categories.completed.length >= majority ? 'Majority reached' : `${majority - categories.completed.length} to majority`}`, inline: true },
         { name: 'Availability review', value: String(reviewCount), inline: true },
         { name: 'By division/location', value: fmt(byDivision).slice(0, 1024) },
         { name: 'Job availability', value: fmt(byAvailability, {
@@ -568,10 +597,16 @@ async function postOnboardingStatus(msg, cohort) {
       footer: { text: 'Private gender and study-stage answers are never listed and never become Discord roles.' },
     }],
   });
-  if (missing.length) {
-    const lines = missing.map(m => `• ${m.user.username}`);
+  if (categories.missingProfile.length) {
+    const lines = categories.missingProfile.map(m => `• ${m.user.username}`);
     for (let i = 0; i < lines.length; i += 40) {
-      await msg.channel.send({ content: `**Still needs onboarding:**\n${lines.slice(i, i + 40).join('\n')}`, allowedMentions: { parse: [] } });
+      await msg.channel.send({ content: `**Missing role-profile data:**\n${lines.slice(i, i + 40).join('\n')}`, allowedMentions: { parse: [] } });
+    }
+  }
+  if (categories.rulesPending.length) {
+    const lines = categories.rulesPending.map(m => `• ${m.user.username}`);
+    for (let i = 0; i < lines.length; i += 40) {
+      await msg.channel.send({ content: `**Role profile ready; rules acceptance pending:**\n${lines.slice(i, i + 40).join('\n')}`, allowedMentions: { parse: [] } });
     }
   }
   if (reviewRecords.length) {
@@ -743,8 +778,9 @@ async function sendOnboardingReminder(client, cohort, guild, channel) {
   const snapshot = await onboardingSnapshot(cohort, guild);
   if (!snapshot.incomplete.length) return { ...snapshot, sent: 0 };
   const rulesMessage = await ensureRulesMessage(client, cohort);
-  for (let index = 0; index < snapshot.incomplete.length; index += 35) {
-    const chunk = snapshot.incomplete.slice(index, index + 35);
+  const categories = categorizeOnboarding(snapshot.eligible, snapshot.records);
+  for (let index = 0; index < categories.missingProfile.length; index += 35) {
+    const chunk = categories.missingProfile.slice(index, index + 35);
     const ids = chunk.map(member => member.id);
     await channel.send({
       content: [
@@ -754,6 +790,20 @@ async function sendOnboardingReminder(client, cohort, guild, channel) {
         'Use the button below to answer the private onboarding questions. Your gender and study-stage answers are not posted publicly.',
       ].join('\n'),
       components: onboardingOnlyComponents(rulesMessage.url),
+      allowedMentions: { users: ids },
+    });
+  }
+  for (let index = 0; index < categories.rulesPending.length; index += 35) {
+    const chunk = categories.rulesPending.slice(index, index + 35);
+    const ids = chunk.map(member => member.id);
+    await channel.send({
+      content: [
+        index === 0 ? '## Please read and accept the rules' : '**More students awaiting rules acceptance:**',
+        ids.map(id => `<@${id}>`).join(' '),
+        '',
+        'Your intake role profile is already complete. No second private questionnaire is required.',
+      ].join('\n'),
+      components: rulesOnlyComponents(rulesMessage.url),
       allowedMentions: { users: ids },
     });
   }
@@ -888,6 +938,15 @@ module.exports = function registerOnboarding(client) {
       try {
         const record = await loadRecord(cohort, interaction.user.id);
         const url = await rulesMessageUrl(client, cohort);
+        if (isRoleProfileComplete(record)) {
+          await interaction.editReply({
+            content: record.rulesAccepted
+              ? '✅ Your intake role profile and rules acceptance are already complete.'
+              : '✅ Your intake role profile is complete. Only rules acceptance remains; no second questionnaire is required.',
+            components: publicComponents(url, cohort, record),
+          });
+          return;
+        }
         await interaction.editReply({ content: questionnaireContent(record), components: questionnaireRows(record, url) });
       } catch (err) {
         await interaction.editReply(`❌ Could not start onboarding: ${err.message}`);
@@ -1029,6 +1088,7 @@ module.exports.publicComponents = publicComponents;
 module.exports.onboardingOnlyComponents = onboardingOnlyComponents;
 module.exports.onboardingRoleNeeds = onboardingRoleNeeds;
 module.exports.isRoleProfileComplete = isRoleProfileComplete;
+module.exports.categorizeOnboarding = categorizeOnboarding;
 module.exports.waitForRoleProfile = waitForRoleProfile;
 module.exports.repairOnboardingRoles = repairOnboardingRoles;
 module.exports.sendOnboardingReminder = sendOnboardingReminder;

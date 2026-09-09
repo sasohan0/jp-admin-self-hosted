@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const source = fs.readFileSync(require.resolve('./onboarding'), 'utf8');
-const { isRoleProfileComplete, onboardingRoleNeeds, waitForRoleProfile } = require('./onboarding');
+const {
+  categorizeOnboarding, isRoleProfileComplete, onboardingRoleNeeds, waitForRoleProfile,
+} = require('./onboarding');
 
 test('combined completion reminder targets only the incomplete union', () => {
   assert.match(source, /!completioncheck/);
@@ -43,6 +45,22 @@ test('join onboarding waits through a slow intake write before choosing fallback
   assert.equal(reads, 3);
   assert.equal(waits, 2);
   assert.equal(isRoleProfileComplete(record), true);
+});
+
+test('status separates ready role profiles from rules-only completion', () => {
+  const eligible = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const base = {
+    division: 'Khulna', availability: 'limited', jobFocus: 'remote',
+    englishLevel: 'advanced', skills: ['JavaScript'],
+  };
+  const result = categorizeOnboarding(eligible, [
+    { userId: 'a', ...base, rulesAccepted: true },
+    { userId: 'b', ...base, rulesAccepted: false },
+    { userId: 'c', division: 'Khulna' },
+  ]);
+  assert.deepEqual(result.completed.map(member => member.id), ['a']);
+  assert.deepEqual(result.rulesPending.map(member => member.id), ['b']);
+  assert.deepEqual(result.missingProfile.map(member => member.id), ['c']);
 });
 
 test('targeted onboarding reminder and role repair stay separate from profile reminders', () => {

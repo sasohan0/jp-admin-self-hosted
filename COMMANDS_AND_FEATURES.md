@@ -36,7 +36,7 @@ These commands must be run in the configured supervisor channel.
 | Command | Module | Effect |
 | --- | --- | --- |
 | `!onboardingpanel` | `onboarding.js` | Creates or refreshes the pinned persistent welcome panel and rules link. |
-| `!onboardingstatus` | `onboarding.js` | Shows completion, division/location, readiness, missing members, and availability-review list without displaying gender. |
+| `!onboardingstatus` | `onboarding.js` | Separately shows complete-with-rules, ready role profiles, rules-only pending members, genuinely missing role data, division/readiness, and availability review without displaying gender. |
 | `!onboardingreminder [#channel]` | `onboarding.js` | Mentions only current members whose private onboarding is incomplete, in `#discussion` by default or a selected same-server text channel. It posts only the rules/onboarding buttons and never displays private answers. |
 | `!rolerepair [#channel]` | `onboarding.js` | Sequentially reconciles independent division, Dhaka-area, availability, work-mode, English, and multi-skill roles. Legacy fruit assignments are removed from members but no role/data is deleted. Missing students are mentioned in the selected channel (discussion by default) with a private form and one durable two-hour follow-up. |
 | `!onboardingrepair` | `onboarding.js` | Compatibility alias for `!rolerepair`. |
