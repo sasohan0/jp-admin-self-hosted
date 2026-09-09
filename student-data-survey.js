@@ -42,8 +42,8 @@ const FIELD_DEFINITIONS = Object.freeze({
     maxLength: 100,
   },
   subregion: {
-    label: 'District / current area',
-    placeholder: 'District, city, or current area',
+    label: 'Dhaka area (Dhaka only)',
+    placeholder: 'Mirpur, Uttara, Savar, etc.; blank outside Dhaka',
     maxLength: 100,
   },
 });
@@ -285,7 +285,7 @@ function surveyModal(guildId, fields, initialValues = {}, options = {}) {
         .setCustomId(`jp_profile_${field}`)
         .setLabel(definition.label)
         .setPlaceholder(definition.placeholder)
-        .setRequired(true)
+        .setRequired(field !== 'subregion')
         .setStyle(TextInputStyle.Short)
         .setMaxLength(definition.maxLength);
     const initial = String(initialValues[field] || '').trim().slice(0, definition.maxLength);
@@ -424,7 +424,7 @@ function hasCompletePrivateProfile(entry) {
     !email.endsWith('@pending.jp-admin.invalid') &&
     String(entry.phone || '').trim() &&
     String(entry.region || '').trim() &&
-    String(entry.subregion || '').trim(),
+    (!/^dhaka$/i.test(String(entry.region || '').trim()) || String(entry.subregion || '').trim()),
   );
 }
 

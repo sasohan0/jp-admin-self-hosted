@@ -8,9 +8,10 @@ const {
 const { cohorts } = require('./config');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
 const { normalizeChannelName } = require('./channel-names');
+const { DIVISION_PREFIX } = require('./role-profile');
 
 const CHANNEL_NAME = 'group-activities';
-const IDENTITY_PREFIX = 'Bootcamp · ';
+const IDENTITY_PREFIX = DIVISION_PREFIX;
 
 function isIdentityRoleName(name) {
   return String(name || '').startsWith(IDENTITY_PREFIX);
@@ -45,7 +46,7 @@ async function ensureChannel(client, cohort, guild) {
     channel = await guild.channels.create({
       name: CHANNEL_NAME,
       type: ChannelType.GuildText,
-      topic: 'Private identity-team threads for outreach research, regional IT connections, mock interviews, and problem solving.',
+      topic: 'Private division-based threads for outreach research, regional IT connections, mock interviews, and problem solving.',
       reason: 'JP ADMIN group activities workspace',
     });
   }
@@ -175,7 +176,7 @@ module.exports = function registerGroupActivities(client) {
       return message.channel.send({
         content: [
           `✅ **Group activities ready:** <#${result.channel.id}>`,
-          lines.length ? lines.join('\n') : 'No populated identity-region roles exist yet. Complete/finalize onboarding, then run `!groupactivities sync`.',
+          lines.length ? lines.join('\n') : 'No populated division roles exist yet. Complete role profiles or run `!rolerepair`, then run `!groupactivities sync`.',
         ].join('\n').slice(0, 1950),
         allowedMentions: { parse: [] },
       });

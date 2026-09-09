@@ -154,7 +154,14 @@ async function main() {
     if (client.__jpConfiguredRuntimeStarted) return;
     client.__jpConfiguredRuntimeStarted = true;
     const { createIntakePortalHandler } = require('./intake-portal');
-    setAppHandler(createIntakePortalHandler());
+    setAppHandler(createIntakePortalHandler({
+      onRoleProfileSaved: async (cohort, user, profile) => {
+        if (!client.isReady()) throw new Error('Discord is outside its operating window; role repair is pending');
+        const guild = await client.guilds.fetch(cohort.guildId);
+        const member = await guild.members.fetch(user.id);
+        return require('./onboarding').reconcileProfileRoles(cohort, member, profile);
+      },
+    }));
     console.log(`[config] Cohort deployment: ${cohorts.map(cohort => cohort.name).join(', ')}`);
     if (managed.enabled) {
       console.log(`[config] Managed cohort registry: ${managed.source}, ${managed.count} active`);

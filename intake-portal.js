@@ -100,10 +100,11 @@ function renderLanding(cohort, settings, env) {
   </section>`);
 }
 
-function renderField(field, previous = new URLSearchParams()) {
-  const required = field.required ? ' <span class="required">*</span>' : '';
+function renderField(field, previous = new URLSearchParams(), fields = []) {
+  const required = (field.required || field.requiredWhenVisible) ? ' <span class="required">*</span>' : '';
   const help = field.help ? `<div class="help">${escapeHtml(field.help)}</div>` : '';
-  const common = `name="${escapeHtml(field.id)}"${field.required ? ' required' : ''}`;
+  const common = `name="${escapeHtml(field.id)}"${field.required ? ' required' : ''}` +
+    `${field.requiredWhenVisible ? ' data-required-visible="1"' : ''}`;
   let control = '';
   if (field.type === 'paragraph') {
     control = `<textarea ${common}>${escapeHtml(previous.get(field.id) || '')}</textarea>`;
@@ -111,8 +112,9 @@ function renderField(field, previous = new URLSearchParams()) {
     const inputType = field.type === 'checkbox' ? 'checkbox' : 'radio';
     const selected = new Set(previous.getAll(field.id));
     control = field.choices.map((choice, index) => {
-      const required = field.required && inputType === 'radio' ? ' required' : '';
-      return `<label class="option"><input type="${inputType}" name="${escapeHtml(field.id)}"${required} value="${escapeHtml(choice)}"${selected.has(choice) ? ' checked' : ''}><span>${escapeHtml(choice)}</span></label>`;
+      const required = (field.required || field.requiredWhenVisible) && inputType === 'radio' ? ' required' : '';
+      const requiredVisible = field.requiredWhenVisible ? ' data-required-visible="1"' : '';
+      return `<label class="option"><input type="${inputType}" name="${escapeHtml(field.id)}"${required}${requiredVisible} value="${escapeHtml(choice)}"${selected.has(choice) ? ' checked' : ''}><span>${escapeHtml(choice)}</span></label>`;
     }).join('');
     if (field.other) {
       control += `<label class="option"><input type="${inputType}" name="${escapeHtml(field.id)}" value="__other__"${selected.has('__other__') ? ' checked' : ''}><span>Other</span></label>` +
@@ -128,7 +130,13 @@ function renderField(field, previous = new URLSearchParams()) {
     const type = ['email', 'date', 'time'].includes(field.type) ? field.type : 'text';
     control = `<input type="${type}" ${common} value="${escapeHtml(previous.get(field.id) || '')}">`;
   }
-  return `<div class="field"><label>${escapeHtml(field.title)}${required}</label>${control}${help}</div>`;
+  const controlling = field.showWhen?.key
+    ? fields.find(item => item.key === field.showWhen.key)
+    : null;
+  const visibility = controlling
+    ? ` data-show-name="${escapeHtml(controlling.id)}" data-show-value="${escapeHtml(field.showWhen.equals)}"`
+    : '';
+  return `<div class="field"${visibility}><label>${escapeHtml(field.title)}${required}</label>${control}${help}</div>`;
 }
 
 function renderForm(cohort, session, fields, csrf, errors = [], previous = new URLSearchParams(), env = process.env) {
@@ -142,10 +150,19 @@ function renderForm(cohort, session, fields, csrf, errors = [], previous = new U
     ${errorBlock}
     <form method="post" action="${escapeHtml(`${portalBaseUrl(env)}/intake/${session.slug}/submit`)}">
       <input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-      ${fields.map(field => renderField(field, previous)).join('')}
-      <label class="option"><input type="checkbox" name="consent" value="yes" required><span>I confirm the information is accurate and may be used for bootcamp operations, attendance and placement support.</span></label>
+      ${fields.map(field => renderField(field, previous, fields)).join('')}
+      <label class="option"><input type="checkbox" name="consent" value="yes" required><span>I confirm the information is accurate. Location, availability, work preference, English level and selected skills may appear as Discord roles; private contact and study information remains in the cohort systems.</span></label>
       <button class="submit" type="submit">Submit and enter Discord</button>
     </form>
+    <script>(function(){
+      function update(){document.querySelectorAll('[data-show-name]').forEach(function(box){
+        var name=box.getAttribute('data-show-name');var expected=box.getAttribute('data-show-value');
+        var selected=document.querySelector('[name="'+CSS.escape(name)+'"]:checked')||document.querySelector('[name="'+CSS.escape(name)+'"]');
+        var visible=!!selected&&selected.value===expected;box.hidden=!visible;
+        box.querySelectorAll('input,select,textarea').forEach(function(input){input.disabled=!visible;if(input.dataset.requiredVisible==='1')input.required=visible;});
+      });}
+      document.addEventListener('change',update);update();
+    })();</script>
   </section>`);
 }
 
@@ -153,7 +170,7 @@ function sendHtml(res, status, html, headers = {}) {
   res.writeHead(status, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store',
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src https://cdn.discordapp.com data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src https://cdn.discordapp.com data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     ...headers,
@@ -297,6 +314,7 @@ function createIntakePortalHandler(dependencies = {}) {
   const exchangeCode = dependencies.exchangeDiscordCode || exchangeDiscordCode;
   const getUser = dependencies.fetchDiscordUser || fetchDiscordUser;
   const addMember = dependencies.addGuildMember || addGuildMember;
+  const onRoleProfileSaved = dependencies.onRoleProfileSaved || (async () => null);
   const templateCache = new Map();
 
   async function getPortalTemplate(cohort) {
@@ -410,6 +428,7 @@ function createIntakePortalHandler(dependencies = {}) {
         await postBackend(cohort, submissionPayload(cohort, session, result));
         const admission = await addMember(cohort, session.user, session.accessToken, env);
         const supervisorTest = (cohort.supervisorIds || []).map(String).includes(String(session.user.id));
+        let roleSyncWarning = '';
         if (!supervisorTest) {
           const activation = await postBackend(cohort, {
             action: 'submitStudentProfile',
@@ -421,19 +440,26 @@ function createIntakePortalHandler(dependencies = {}) {
             onboarding: result.onboarding,
           });
           if (!activation.saved) throw new Error('Discord access succeeded, but the tracking profile could not be activated');
+          try {
+            await onRoleProfileSaved(cohort, session.user, result.onboarding);
+          } catch (error) {
+            roleSyncWarning = String(error.message || 'Role synchronization is pending').slice(0, 240);
+          }
         }
         await postBackend(cohort, {
           action: 'updateIntakeApplicationStatus',
           submissionId: session.submissionId,
           status: supervisorTest
             ? 'SUPERVISOR TEST - STORED, NOT TRACKED'
-            : (admission.alreadyMember ? 'ALREADY MEMBER · SYNCHRONIZED' : 'ADMITTED · SYNCHRONIZED'),
-          detail: '',
+            : (roleSyncWarning
+              ? (admission.alreadyMember ? 'ALREADY MEMBER · ROLE REPAIR PENDING' : 'ADMITTED · ROLE REPAIR PENDING')
+              : (admission.alreadyMember ? 'ALREADY MEMBER · SYNCHRONIZED' : 'ADMITTED · SYNCHRONIZED')),
+          detail: roleSyncWarning,
         }).catch(() => null);
         sessions.delete(sessionId);
         const supervisorNote = supervisorTest
           ? '<p>This supervisor test was stored without creating an active student tracking profile.</p>'
-          : '<p>You can now open Discord and continue with the server rules and onboarding.</p>';
+          : `<p>You can now open Discord and continue with the server rules and onboarding.</p>${roleSyncWarning ? '<p>Your answers were saved. The bot will safely retry role assignment; a mentor can also run role repair.</p>' : ''}`;
         sendHtml(res, 200, page('Enrollment complete', `<section class="card"><div class="success"><h1>Enrollment complete</h1><p>Your data was saved and your Discord account is linked to <strong>${escapeHtml(cohort.name)}</strong>.</p></div>${supervisorNote}<p><a class="button" href="https://discord.com/channels/${escapeHtml(cohort.guildId)}">Open Discord server</a></p></section>`), {
           'Set-Cookie': sessionCookie('', 0),
         });

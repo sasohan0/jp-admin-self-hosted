@@ -2,9 +2,9 @@
 //  onboarding.js - private bootcamp onboarding + role grouping
 //
 //  Public: welcome greeting, exact rules-message link, Start button.
-//  Private: ephemeral selects for gender, division, job readiness,
-//  and study stage. Answers persist through the existing Sheet
-//  state API. Identity teams contain at most six members.
+//  Private: ephemeral selects for division, Dhaka area, availability,
+//  work mode, English level, and honest skills. Answers persist through the
+//  existing Sheet state API and project to independent Discord roles.
 // ============================================================
 const {
   ActionRowBuilder,
@@ -24,51 +24,56 @@ const {
   chooseProvisionalGroup,
   identityRoleName,
 } = require('./onboarding-groups');
+const {
+  DHAKA_SUBREGIONS,
+  DIVISIONS,
+  ENGLISH_ROLES,
+  LEGACY_IDENTITY_PREFIX,
+  READINESS_ROLES,
+  SKILLS,
+  WORK_MODE_ROLES,
+  expectedRoleNames,
+  isManagedProfileRoleName,
+  missingRoleProfileFields,
+  roleProfile,
+} = require('./role-profile');
 
-const IDENTITY_PREFIX = 'Bootcamp · ';
-const READINESS_ROLES = {
-  full_time: 'Job Ready · Full-Time',
-  limited: 'Job Search · Limited Availability',
-  study: 'Study First · Not Job Ready',
-};
+const IDENTITY_PREFIX = LEGACY_IDENTITY_PREFIX;
 const ROLE_COLORS = [0x2ecc71, 0x3498db, 0x9b59b6, 0xe67e22, 0xe91e63, 0x1abc9c, 0xf1c40f];
 
 const QUESTIONS = {
-  gender: {
-    placeholder: '1/4 — Gender (kept private)',
-    options: [
-      ['Female', 'female', 'Used only to improve team placement'],
-      ['Male', 'male', 'Used only to improve team placement'],
-      ['Prefer not to say', 'private', 'You can keep this private'],
-    ],
-  },
   division: {
-    placeholder: '2/4 — Division / location',
-    options: [
-      ['Barishal', 'Barishal'], ['Chattogram', 'Chattogram'], ['Dhaka', 'Dhaka'],
-      ['Khulna', 'Khulna'], ['Mymensingh', 'Mymensingh'], ['Rajshahi', 'Rajshahi'],
-      ['Rangpur', 'Rangpur'], ['Sylhet', 'Sylhet'], ['Outside Bangladesh', 'Abroad'],
-      ['Other / not listed', 'Other'],
-    ],
+    placeholder: '1/5 — Current division / location',
+    options: DIVISIONS.map(value => [value === 'Abroad' ? 'Outside Bangladesh' : value, value]),
+  },
+  subregion: {
+    placeholder: '2/5 — Current Dhaka area',
+    options: DHAKA_SUBREGIONS.map(value => [value, value]),
   },
   availability: {
-    placeholder: '3/4 — Current job-search availability',
+    placeholder: '3/5 — Current job-search availability',
     options: [
       ['Full-time job ready now', 'full_time', 'Actively searching and available for full-time work'],
       ['Searching, but limited availability', 'limited', 'Study or other commitments limit full-time availability'],
       ['Not job searching — study first', 'study', 'School/college/early university study should be the priority'],
     ],
   },
-  studyStage: {
-    placeholder: '4/4 — Current study stage',
+  jobFocus: {
+    placeholder: '4/5 — Job preference',
     options: [
-      ['Graduated / not currently studying', 'graduated'],
-      ['University final year', 'university_final'],
-      ['University 1st–3rd year', 'university_early'],
-      ['College / HSC / board exams', 'college'],
-      ['School', 'school'],
-      ['Other', 'other'],
+      ['Remote', 'remote'], ['Onsite', 'onsite'], ['Hybrid', 'hybrid'],
     ],
+  },
+  englishLevel: {
+    placeholder: '5/5 — English communication',
+    options: [
+      ['Basic', 'basic'], ['Advanced', 'advanced'], ['Expert', 'expert'],
+    ],
+  },
+  skills: {
+    placeholder: 'Select every true skill (multiple allowed)',
+    options: SKILLS.map(value => [value, value]),
+    multiple: true,
   },
 };
 
@@ -92,6 +97,9 @@ const userPrefix = (cohort) => `ob_${cohort.guildId}_user_`;
 const rulesKey = (cohort) => `ob_${cohort.guildId}_rules_message`;
 const panelKey = (cohort) => `ob_${cohort.guildId}_panel_message`;
 const finalizedKey = (cohort) => `ob_${cohort.guildId}_finalized`;
+const roleReminderKey = (cohort) => `ob_${cohort.guildId}_role_reminder_v1`;
+const roleReminderTimers = new Map();
+const ROLE_REMINDER_DELAY_MS = 2 * 60 * 60 * 1000;
 
 async function getState(cohort, key) {
   const url = `${cohort.appsScriptUrl}?action=getstate&k=${encodeURIComponent(key)}&key=${encodeURIComponent(cohort.apiKey)}`;
@@ -143,7 +151,7 @@ async function loadAllRecords(cohort) {
 }
 
 function isComplete(record) {
-  return Boolean(record.gender && record.division && record.availability && record.studyStage && record.rulesAccepted);
+  return missingRoleProfileFields(record).length === 0 && Boolean(record.rulesAccepted);
 }
 
 function needsAvailabilityReview(record) {
@@ -151,7 +159,16 @@ function needsAvailabilityReview(record) {
 }
 
 function progress(record) {
-  return [record.gender, record.division, record.availability, record.studyStage, record.rulesAccepted].filter(Boolean).length;
+  const profile = roleProfile(record);
+  return [
+    profile.division,
+    profile.division === 'Dhaka' ? profile.subregion : 'not-required',
+    profile.availability,
+    profile.jobFocus,
+    profile.englishLevel,
+    profile.skills.length ? 'skills' : '',
+    record.rulesAccepted,
+  ].filter(Boolean).length;
 }
 
 function roleColor(name) {
@@ -185,6 +202,27 @@ async function applyReadinessRole(member, availability) {
   const role = await ensureRole(member.guild, name);
   await replaceRoles(member, r => Object.values(READINESS_ROLES).includes(r.name), role);
   return role;
+}
+
+async function applyProfileRoles(member, input) {
+  await member.guild.roles.fetch();
+  const profile = roleProfile(input);
+  const names = expectedRoleNames(profile);
+  const roles = [];
+  for (const name of names) roles.push(await ensureRole(member.guild, name));
+  const desiredIds = new Set(roles.map(role => role.id));
+  const remove = member.roles.cache.filter(role =>
+    (isManagedProfileRoleName(role.name) || role.name.startsWith(LEGACY_IDENTITY_PREFIX)) &&
+    !desiredIds.has(role.id)).map(role => role.id);
+  if (remove.length) await member.roles.remove(remove, 'JP ADMIN role-profile reconciliation');
+  const add = roles.filter(role => !member.roles.cache.has(role.id));
+  if (add.length) await member.roles.add(add, 'JP ADMIN role-profile reconciliation');
+  return { profile, roles: names, removedLegacy: remove.filter(id =>
+    member.guild.roles.cache.get(id)?.name.startsWith(LEGACY_IDENTITY_PREFIX)).length };
+}
+
+function reconcileProfileRoles(cohort, member, input) {
+  return enqueue(`roles:${cohort.guildId}`, () => applyProfileRoles(member, input));
 }
 
 function groupsFromRecords(records, memberIds, excludeUserId) {
@@ -276,56 +314,82 @@ async function maybeFinalizeGroups(cohort, guild) {
 
 function selectRow(field, record) {
   const question = QUESTIONS[field];
-  const selected = record[field];
+  const selected = question.multiple
+    ? new Set(Array.isArray(record[field]) ? record[field] : [])
+    : record[field];
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`onboard:${field}`)
     .setPlaceholder(question.placeholder)
     .setMinValues(1)
-    .setMaxValues(1)
+    .setMaxValues(question.multiple ? question.options.length : 1)
     .addOptions(question.options.map(([label, value, description]) => ({
       label, value,
       ...(description ? { description } : {}),
-      default: selected === value,
+      default: question.multiple ? selected.has(value) : selected === value,
     })));
   return new ActionRowBuilder().addComponents(menu);
 }
 
-function questionnaireRows(record, rulesUrl) {
+function pageButtons() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('onboard:page_core').setLabel('Location & availability').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('onboard:page_skills').setLabel('Skills & rules').setStyle(ButtonStyle.Secondary),
+  );
+}
+
+function questionnaireRows(record, rulesUrl, page = '') {
+  const profile = roleProfile(record);
+  const coreComplete = Boolean(profile.division &&
+    (profile.division !== 'Dhaka' || profile.subregion) && profile.availability &&
+    profile.jobFocus && profile.englishLevel);
+  const activePage = page || (coreComplete ? 'skills' : 'core');
   const accept = new ButtonBuilder()
     .setCustomId('onboard:accept_rules')
     .setLabel(record.rulesAccepted ? 'Rules accepted ✓' : 'I read and accept the rules')
     .setStyle(record.rulesAccepted ? ButtonStyle.Success : ButtonStyle.Primary)
     .setDisabled(Boolean(record.rulesAccepted));
   const rules = new ButtonBuilder().setLabel('Open rules').setStyle(ButtonStyle.Link).setURL(rulesUrl);
+  if (activePage === 'skills') {
+    return [
+      selectRow('skills', record),
+      new ActionRowBuilder().addComponents(rules, accept),
+      pageButtons(),
+    ];
+  }
   return [
-    selectRow('gender', record),
     selectRow('division', record),
+    ...(profile.division === 'Dhaka' ? [selectRow('subregion', record)] : []),
     selectRow('availability', record),
-    selectRow('studyStage', record),
-    new ActionRowBuilder().addComponents(rules, accept),
+    selectRow('jobFocus', record),
+    selectRow('englishLevel', record),
   ];
 }
 
 function questionnaireContent(record) {
   const done = progress(record);
+  const profile = roleProfile(record);
+  const missing = missingRoleProfileFields(record);
   const lines = [
-    `**Private bootcamp onboarding — ${done}/5 complete**`,
-    'Your answers are visible only to the bot backend and mentors with Sheet access. Gender is used only to improve team placement.',
+    `**Bootcamp role profile — ${done}/7 complete**`,
+    'Choose accurate answers only. These selections create visible Discord roles; contact details and private study information are not posted.',
   ];
-  if (record.groupName) lines.push(`\n🍉 **Probable identity group:** ${record.groupName}${record.groupProvisional ? ' _(may change at final grouping)_' : ''}`);
-  if (record.availability && READINESS_ROLES[record.availability]) lines.push(`🎯 **Job-readiness role:** ${READINESS_ROLES[record.availability]}`);
+  if (profile.division) lines.push(`📍 **Location:** ${profile.division}${profile.subregion ? ` · ${profile.subregion}` : ''}`);
+  if (profile.availability && READINESS_ROLES[profile.availability]) lines.push(`🎯 **Availability:** ${READINESS_ROLES[profile.availability]}`);
+  if (profile.jobFocus && WORK_MODE_ROLES[profile.jobFocus]) lines.push(`💼 **Work mode:** ${WORK_MODE_ROLES[profile.jobFocus]}`);
+  if (profile.englishLevel && ENGLISH_ROLES[profile.englishLevel]) lines.push(`🗣️ **Communication:** ${ENGLISH_ROLES[profile.englishLevel]}`);
+  if (profile.skills.length) lines.push(`🧰 **Skills:** ${profile.skills.join(', ')}`);
   if (needsAvailabilityReview(record)) {
     lines.push('⚠️ **Please review your availability:** full-time job readiness may conflict with your current study stage. Choose “limited” or “study first” if full-time work would interrupt your education.');
   }
-  if (isComplete(record)) lines.push('\n✅ **Onboarding complete.** You can reopen the panel later to update an answer.');
-  else lines.push('\nChoose one answer in each menu and accept the rules. Every answer is saved immediately.');
+  if (isComplete(record)) lines.push('\n✅ **Role profile complete.** Reopen either page whenever your information changes.');
+  else lines.push(`\nStill required: **${[...missing, ...(!record.rulesAccepted ? ['rules acceptance'] : [])].join(', ')}**. Every answer is saved and roles are reconciled immediately.`);
   return lines.join('\n');
 }
 
 function publicComponents(rulesUrl, cohort) {
   return [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setLabel('Read rules & regulations').setStyle(ButtonStyle.Link).setURL(rulesUrl),
-    new ButtonBuilder().setCustomId('onboard:start').setLabel('Start private onboarding').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId('onboard:start').setLabel('Complete private onboarding').setStyle(ButtonStyle.Success),
   ), channelSurveyButton(cohort)];
 }
 
@@ -338,11 +402,13 @@ function onboardingOnlyComponents(rulesUrl) {
 
 function onboardingRoleNeeds(record, roleNames = []) {
   const names = new Set(roleNames);
+  const expected = expectedRoleNames(record);
   return {
-    identity: Boolean(record?.gender && record?.division) &&
-      ![...names].some(name => String(name).startsWith(IDENTITY_PREFIX)),
-    readiness: Boolean(READINESS_ROLES[record?.availability]) &&
-      !names.has(READINESS_ROLES[record.availability]),
+    missing: expected.filter(name => !names.has(name)),
+    stale: [...names].filter(name =>
+      (isManagedProfileRoleName(name) || String(name).startsWith(LEGACY_IDENTITY_PREFIX)) &&
+      !expected.includes(name)),
+    profileFields: missingRoleProfileFields(record),
   };
 }
 
@@ -376,7 +442,7 @@ async function ensureOnboardingPanel(client, cohort, rulesMessage) {
   const channel = await client.channels.fetch(cohort.channels.welcome);
   const rulesUrl = rulesMessage.url || `https://discord.com/channels/${cohort.guildId}/${cohort.channels.rules}/${rulesMessage.id}`;
   const payload = {
-    content: '## 👋 Welcome to the Bootcamp\nRead the rules, complete your private contact profile, then finish the private onboarding questions. Email and phone answers go only to the cohort Sheet; they are never posted in this channel. Existing and new members can use this panel. Identity teams have a maximum of six people.',
+    content: '## 👋 Welcome to the Bootcamp\nRead the rules, complete your private contact profile, then finish the role-profile questions. Email and phone stay private. Location, availability, work mode, English level and honestly selected skills become separate Discord roles. Existing and new members can update their answers safely.',
     components: publicComponents(rulesUrl, cohort),
     allowedMentions: { parse: [] },
   };
@@ -416,17 +482,12 @@ async function processOnboardingAnswer(client, interaction, cohort, field, value
   const member = await interaction.guild.members.fetch(interaction.user.id);
   let record = await loadRecord(cohort, interaction.user.id);
   if (field === 'rulesAccepted') record.rulesAccepted = true;
-  else record[field] = value;
+  else record[field] = field === 'skills' ? [...new Set(value)] : value;
+  if (field === 'division' && value !== 'Dhaka') record.subregion = '';
   if (isComplete(record) && !record.completedAt) record.completedAt = new Date().toISOString();
   await saveRecord(cohort, record);
 
-  if (record.gender && record.division) {
-    record = await enqueue(`groups:${cohort.guildId}`, () => assignProvisionalGroup(cohort, member, record));
-  }
-  if (record.availability) await applyReadinessRole(member, record.availability);
-  if (isComplete(record)) {
-    await enqueue(`groups:${cohort.guildId}`, () => maybeFinalizeGroups(cohort, interaction.guild));
-  }
+  await reconcileProfileRoles(cohort, member, record);
 
   record = await loadRecord(cohort, interaction.user.id);
   const rulesUrl = await rulesMessageUrl(client, cohort);
@@ -434,8 +495,8 @@ async function processOnboardingAnswer(client, interaction, cohort, field, value
 }
 
 async function postOnboardingStatus(msg, cohort) {
-  const [records, members, finalized] = await Promise.all([
-    loadAllRecords(cohort), fetchGuildMembers(msg.guild), getState(cohort, finalizedKey(cohort)),
+  const [records, members] = await Promise.all([
+    loadAllRecords(cohort), fetchGuildMembers(msg.guild),
   ]);
   const eligible = [...members.values()].filter(m => !m.user.bot && !cohort.supervisorIds.includes(m.id));
   const eligibleIds = new Set(eligible.map(m => m.id));
@@ -458,15 +519,14 @@ async function postOnboardingStatus(msg, cohort) {
       color: completed.length >= majority ? 0x2ecc71 : 0xe67e22,
       fields: [
         { name: 'Completed', value: `${completed.length} / ${eligible.length}`, inline: true },
-        { name: 'Auto-finalize majority', value: String(majority), inline: true },
-        { name: 'Groups finalized', value: finalized === '1' ? 'Yes' : 'Not yet', inline: true },
+        { name: 'Role-profile coverage', value: `${completed.length >= majority ? 'Majority reached' : `${majority - completed.length} to majority`}`, inline: true },
         { name: 'Availability review', value: String(reviewCount), inline: true },
         { name: 'By division/location', value: fmt(byDivision).slice(0, 1024) },
         { name: 'Job availability', value: fmt(byAvailability, {
           full_time: 'Full-time ready', limited: 'Limited availability', study: 'Study first',
         }).slice(0, 1024) },
       ],
-      footer: { text: 'Gender answers are intentionally not listed. They are used only by the grouping algorithm.' },
+      footer: { text: 'Private gender and study-stage answers are never listed and never become Discord roles.' },
     }],
   });
   if (missing.length) {
@@ -570,6 +630,76 @@ async function onboardingSnapshot(cohort, guild) {
   return { eligible, incomplete, records, recordsById, members };
 }
 
+async function missingRoleProfileSnapshot(cohort, guild) {
+  const snapshot = await onboardingSnapshot(cohort, guild);
+  const missing = snapshot.eligible.map(member => {
+    const record = snapshot.recordsById.get(member.id) || {};
+    return { member, fields: missingRoleProfileFields(record) };
+  }).filter(item => item.fields.length);
+  return { ...snapshot, missing };
+}
+
+async function postRoleProfileReminder(client, cohort, guild, channel, followup = false) {
+  const snapshot = await missingRoleProfileSnapshot(cohort, guild);
+  if (!snapshot.missing.length) return { sent: 0, snapshot };
+  const rulesMessage = await ensureRulesMessage(client, cohort);
+  for (let index = 0; index < snapshot.missing.length; index += 35) {
+    const chunk = snapshot.missing.slice(index, index + 35);
+    const ids = chunk.map(item => item.member.id);
+    await channel.send({
+      content: [
+        followup && index === 0
+          ? '## Role-profile reminder — still incomplete after two hours'
+          : (index === 0 ? '## Complete your role profile' : '**More students who still need role-profile data:**'),
+        ids.map(id => `<@${id}>`).join(' '),
+        '',
+        'Use **Complete private onboarding** below. Select your real location, availability, work mode, English level and every skill you can genuinely demonstrate. Do not exaggerate skills. Answers are processed one member at a time.',
+      ].join('\n'),
+      components: onboardingOnlyComponents(rulesMessage.url),
+      allowedMentions: { users: ids },
+    });
+  }
+  return { sent: snapshot.missing.length, snapshot };
+}
+
+function clearRoleReminderTimer(cohort) {
+  const existing = roleReminderTimers.get(cohort.guildId);
+  if (existing) clearTimeout(existing);
+  roleReminderTimers.delete(cohort.guildId);
+}
+
+async function runRoleReminder(client, cohort, state) {
+  clearRoleReminderTimer(cohort);
+  const guild = await client.guilds.fetch(cohort.guildId).catch(() => null);
+  const channel = guild && await guild.channels.fetch(state.channelId).catch(() => null);
+  if (guild && channel?.isTextBased()) {
+    await postRoleProfileReminder(client, cohort, guild, channel, true).catch(error =>
+      console.error(`[onboarding] ${cohort.name} role reminder failed:`, error.message));
+  }
+  await setState(cohort, roleReminderKey(cohort), '').catch(() => {});
+}
+
+async function scheduleRoleReminder(client, cohort, channelId, dueAt = Date.now() + ROLE_REMINDER_DELAY_MS) {
+  clearRoleReminderTimer(cohort);
+  const state = { channelId, dueAt, createdAt: Date.now() };
+  await setState(cohort, roleReminderKey(cohort), JSON.stringify(state));
+  const delay = Math.max(0, Math.min(ROLE_REMINDER_DELAY_MS, dueAt - Date.now()));
+  const timer = setTimeout(() => runRoleReminder(client, cohort, state), delay);
+  timer.unref?.();
+  roleReminderTimers.set(cohort.guildId, timer);
+  return state;
+}
+
+async function recoverRoleReminders(client) {
+  for (const cohort of cohorts) {
+    const raw = await getState(cohort, roleReminderKey(cohort)).catch(() => '');
+    let state;
+    try { state = JSON.parse(raw || 'null'); } catch { state = null; }
+    if (!state?.channelId || !Number.isFinite(Number(state.dueAt))) continue;
+    await scheduleRoleReminder(client, cohort, state.channelId, Number(state.dueAt));
+  }
+}
+
 async function sendOnboardingReminder(client, cohort, guild, channel) {
   const snapshot = await onboardingSnapshot(cohort, guild);
   if (!snapshot.incomplete.length) return { ...snapshot, sent: 0 };
@@ -595,81 +725,99 @@ async function repairOnboardingRoles(cohort, guild) {
   const snapshot = await onboardingSnapshot(cohort, guild);
   const liveIds = new Set(snapshot.eligible.map(member => member.id));
   const candidates = snapshot.records.filter(record => liveIds.has(String(record.userId)));
-  const completed = candidates.filter(isComplete);
-  const majority = Math.floor(snapshot.eligible.length / 2) + 1;
-  const alreadyFinalized = await getState(cohort, finalizedKey(cohort));
-  const shouldFinalize = alreadyFinalized === '1' || completed.length >= Math.max(2, majority);
-  const before = { identity: 0, readiness: 0 };
+  const before = { missingRoles: 0, staleRoles: 0 };
   for (const record of candidates) {
     const member = snapshot.members.get(String(record.userId));
     if (!member) continue;
     const needs = onboardingRoleNeeds(record, [...member.roles.cache.values()].map(role => role.name));
-    if (needs.identity) before.identity++;
-    if (needs.readiness) before.readiness++;
+    before.missingRoles += needs.missing.length;
+    before.staleRoles += needs.stale.length;
   }
 
   const failures = [];
-  const plannedGroups = groupsFromRecords(candidates, liveIds);
+  let repaired = 0;
+  let legacyAssignmentsRemoved = 0;
   for (const record of candidates) {
     const member = snapshot.members.get(String(record.userId));
     if (!member) continue;
     try {
-      if (record.availability) await applyReadinessRole(member, record.availability);
-      // Completed records are assigned once by the final rebalance below. Only
-      // partial records need provisional recovery when final grouping applies.
-      if (record.gender && record.division && (!shouldFinalize || !isComplete(record))) {
-        let selected = plannedGroups.find(group => group.members.some(item => item.userId === record.userId));
-        if (!selected || selected.division !== record.division || selected.members.length > MAX_GROUP_SIZE) {
-          selected = chooseProvisionalGroup(plannedGroups, record, MAX_GROUP_SIZE);
-        }
-        let role;
-        if (selected) {
-          role = guild.roles.cache.get(selected.roleId) || await ensureRole(guild, selected.roleName);
-          selected.roleId = role.id;
-          selected.roleName = role.name;
-          if (!selected.members.some(item => item.userId === record.userId)) selected.members.push(record);
-        } else {
-          const divisionGroupCount = plannedGroups.filter(group => group.division === record.division).length;
-          role = await ensureRole(guild, identityRoleName(record.division, divisionGroupCount));
-          selected = { roleId: role.id, roleName: role.name, division: record.division,
-            genders: new Set([record.gender]), members: [record] };
-          plannedGroups.push(selected);
-        }
-        await replaceRoles(member, roleItem => roleItem.name.startsWith(IDENTITY_PREFIX), role);
-        record.groupRoleId = role.id;
-        record.groupName = role.name;
-        record.groupProvisional = true;
-        await saveRecord(cohort, record);
-      }
+      const result = await applyProfileRoles(member, record);
+      legacyAssignmentsRemoved += result.removedLegacy;
+      repaired++;
     } catch (error) {
       failures.push(`${member.user.username}: ${error.message}`);
     }
   }
-
-  // Preserve the strict-majority behavior. If final grouping was already
-  // reached, or is reached now, rebalance completed members after provisional
-  // recovery so no member remains on a stale/missing identity role.
-  let finalized = null;
-  if (shouldFinalize) {
-    try {
-      finalized = await finalizeGroups(cohort, guild, snapshot);
-    } catch (error) {
-      failures.push(`Final rebalance: ${error.message}`);
-    }
-  }
-
-  const remaining = { identity: 0, readiness: 0 };
+  const remaining = { missingRoles: 0, staleRoles: 0 };
+  const missingProfiles = [];
   for (const record of candidates) {
     const member = await guild.members.fetch(String(record.userId)).catch(() => null);
     if (!member) continue;
     const needs = onboardingRoleNeeds(record, [...member.roles.cache.values()].map(role => role.name));
-    if (needs.identity) remaining.identity++;
-    if (needs.readiness) remaining.readiness++;
+    remaining.missingRoles += needs.missing.length;
+    remaining.staleRoles += needs.stale.length;
+    if (needs.profileFields.length) missingProfiles.push({ member, fields: needs.profileFields });
   }
-  return { candidates: candidates.length, incomplete: snapshot.incomplete.length, before, remaining, failures, finalized };
+  const noRecord = snapshot.eligible
+    .filter(member => !candidates.some(record => String(record.userId) === member.id))
+    .map(member => ({ member, fields: missingRoleProfileFields({}) }));
+  missingProfiles.push(...noRecord);
+  return {
+    candidates: candidates.length,
+    repaired,
+    before,
+    remaining,
+    missingProfiles,
+    legacyAssignmentsRemoved,
+    failures,
+  };
+}
+
+async function runRoleRepairCommand(msg, client, cohort) {
+  const requested = msg.mentions.channels.first();
+  const reminderChannel = requested || await client.channels.fetch(cohort.channels.discussion);
+  if (!reminderChannel || reminderChannel.guildId !== cohort.guildId || !reminderChannel.isTextBased()) {
+    return msg.reply('Choose a text channel in this server, for example `!rolerepair #discussion`.');
+  }
+  await msg.reply({
+    content: 'Repairing independent location, availability, work-mode, English and skill roles from saved answers...',
+    allowedMentions: { parse: [] },
+  });
+  const result = await enqueue(`roles:${cohort.guildId}`, () => repairOnboardingRoles(cohort, msg.guild));
+  let reminded = 0;
+  if (result.missingProfiles.length) {
+    const reminder = await postRoleProfileReminder(client, cohort, msg.guild, reminderChannel, false);
+    reminded = reminder.sent;
+    if (reminded) await scheduleRoleReminder(client, cohort, reminderChannel.id);
+  } else {
+    clearRoleReminderTimer(cohort);
+    await setState(cohort, roleReminderKey(cohort), '');
+  }
+  const lines = [
+    `✅ Role repair processed **${result.repaired}/${result.candidates}** saved member record(s), one at a time.`,
+    `Before: **${result.before.missingRoles}** missing role assignments · **${result.before.staleRoles}** stale managed assignments`,
+    `After: **${result.remaining.missingRoles}** missing · **${result.remaining.staleRoles}** stale`,
+    `Legacy fruit-team assignments removed from members: **${result.legacyAssignmentsRemoved}** (role objects and history were not deleted)`,
+    reminded
+      ? `Mentioned **${reminded}** student(s) needing data in <#${reminderChannel.id}>; remaining students will be reminded once after two hours.`
+      : 'Every current student has the saved role data needed; no reminder was posted.',
+  ];
+  if (result.failures.length) lines.push('', '⚠️ Assignment failures:', ...result.failures.slice(0, 20));
+  return msg.channel.send({ content: lines.join('\n').slice(0, 1990), allowedMentions: { parse: [] } });
 }
 
 module.exports = function registerOnboarding(client) {
+  const recover = async () => {
+    await recoverRoleReminders(client);
+    // Full-cohort repair is intentionally command-driven. This avoids a
+    // reconnect changing legacy or closing cohorts and keeps startup light.
+    // New or resubmitted answers are still reconciled immediately.
+  };
+  if (client.isReady?.()) recover().catch(error =>
+    console.error('[onboarding] startup recovery failed:', error.message));
+  else client.once('clientReady', () => recover().catch(error =>
+    console.error('[onboarding] startup recovery failed:', error.message)));
+
   client.on('guildMemberAdd', async member => {
     const cohort = cohorts.find(c => c.guildId === member.guild.id);
     if (!cohort || member.user.bot || !cohort.channels.welcome || !cohort.channels.rules) return;
@@ -677,7 +825,7 @@ module.exports = function registerOnboarding(client) {
       const rulesMessage = await ensureRulesMessage(client, cohort);
       const channel = await client.channels.fetch(cohort.channels.welcome);
       await channel.send({
-        content: `👋 Welcome ${member}! Please read the rules, complete your private contact profile, and finish private onboarding. Your email, phone, and other profile answers are never posted in this channel.`,
+        content: `👋 Welcome ${member}! Please read the rules, complete your private contact profile, and finish your role profile. Contact details remain private; only the selected role categories appear on Discord.`,
         components: publicComponents(rulesMessage.url, cohort),
         allowedMentions: { users: [member.id] },
       });
@@ -701,6 +849,19 @@ module.exports = function registerOnboarding(client) {
       return;
     }
 
+    if (interaction.isButton() && ['onboard:page_core', 'onboard:page_skills'].includes(interaction.customId)) {
+      await interaction.deferUpdate();
+      try {
+        const record = await loadRecord(cohort, interaction.user.id);
+        const url = await rulesMessageUrl(client, cohort);
+        const page = interaction.customId.endsWith('core') ? 'core' : 'skills';
+        await interaction.editReply({ content: questionnaireContent(record), components: questionnaireRows(record, url, page) });
+      } catch (err) {
+        await interaction.editReply(`❌ Could not open role profile: ${err.message}`);
+      }
+      return;
+    }
+
     if (interaction.isButton() && interaction.customId === 'onboard:accept_rules') {
       await interaction.deferUpdate();
       await enqueue(`${cohort.guildId}:${interaction.user.id}`, () =>
@@ -714,7 +875,8 @@ module.exports = function registerOnboarding(client) {
       if (!QUESTIONS[field]) return;
       await interaction.deferUpdate();
       await enqueue(`${cohort.guildId}:${interaction.user.id}`, () =>
-        processOnboardingAnswer(client, interaction, cohort, field, interaction.values[0])
+        processOnboardingAnswer(client, interaction, cohort, field,
+          field === 'skills' ? interaction.values : interaction.values[0])
       ).catch(err => interaction.editReply(`❌ Could not save onboarding: ${err.message}`).catch(() => {}));
     }
   });
@@ -724,6 +886,7 @@ module.exports = function registerOnboarding(client) {
     const lower = msg.content.trim().toLowerCase();
     if (!['!onboardingpanel', '!onboardingstatus', '!finalizegroups',
       '!completioncheck', '!completionreminder', '!onboardingrepair'].includes(lower) &&
+        !lower.startsWith('!rolerepair') &&
         !lower.startsWith('!onboardingreminder') &&
         !lower.startsWith('!setrulesmessage') && !lower.startsWith('!resetonboarding')) return;
     const cohort = cohorts.find(c => c.guildId === msg.guildId);
@@ -751,18 +914,8 @@ module.exports = function registerOnboarding(client) {
           allowedMentions: { parse: [] },
         });
       }
-      if (lower === '!onboardingrepair') {
-        await msg.reply({ content: 'Repairing identity and job-readiness roles from saved private onboarding answers...', allowedMentions: { parse: [] } });
-        const result = await enqueue(`groups:${cohort.guildId}`, () => repairOnboardingRoles(cohort, msg.guild));
-        const lines = [
-          `✅ Onboarding role repair checked **${result.candidates}** member record(s).`,
-          `Before repair: **${result.before.identity}** missing identity role · **${result.before.readiness}** missing readiness role`,
-          `Still missing: **${result.remaining.identity}** identity · **${result.remaining.readiness}** readiness`,
-          `Private onboarding incomplete: **${result.incomplete}**`,
-          result.finalized ? `Final grouping: **${result.finalized.participants}** members in **${result.finalized.groups}** teams` : 'Final grouping: majority threshold not reached yet',
-        ];
-        if (result.failures.length) lines.push('', '⚠️ Failures:', ...result.failures.slice(0, 20));
-        return msg.channel.send({ content: lines.join('\n').slice(0, 1990), allowedMentions: { parse: [] } });
+      if (lower === '!onboardingrepair' || lower.startsWith('!rolerepair')) {
+        return runRoleRepairCommand(msg, client, cohort);
       }
       if (lower === '!completioncheck') return postCompletionCheck(msg, client, cohort, false);
       if (lower === '!completionreminder') {
@@ -772,10 +925,7 @@ module.exports = function registerOnboarding(client) {
           : '✅ Every current student has completed private onboarding and profile data; no reminder was posted.');
       }
       if (lower === '!finalizegroups') {
-        await msg.reply('⏳ Rebalancing completed members into final division teams (maximum six each)...');
-        const result = await enqueue(`groups:${cohort.guildId}`, () => finalizeGroups(cohort, msg.guild));
-        return msg.channel.send(`✅ Finalized **${result.participants}** members into **${result.groups}** groups.` +
-          (result.failures.length ? `\n⚠️ Failed assignments:\n${result.failures.slice(0, 20).join('\n')}` : ''));
+        return msg.reply('Fruit-team grouping is retired. Run `!rolerepair [#channel]` to assign independent division, Dhaka-area, availability, work-mode, English and skill roles.');
       }
       if (lower.startsWith('!setrulesmessage')) {
         const match = msg.content.match(/discord\.com\/channels\/(\d+)\/(\d+)\/(\d+)/i);
@@ -795,7 +945,7 @@ module.exports = function registerOnboarding(client) {
         await setState(cohort, recordKey(cohort, user.id), '');
         const member = await msg.guild.members.fetch(user.id).catch(() => null);
         if (member) {
-          await replaceRoles(member, r => r.name.startsWith(IDENTITY_PREFIX) || Object.values(READINESS_ROLES).includes(r.name), null);
+          await replaceRoles(member, r => r.name.startsWith(IDENTITY_PREFIX) || isManagedProfileRoleName(r.name), null);
         }
         return msg.reply(`✅ Cleared onboarding answers and managed roles for **${user.username}**.`);
       }
@@ -814,3 +964,7 @@ module.exports.onboardingOnlyComponents = onboardingOnlyComponents;
 module.exports.onboardingRoleNeeds = onboardingRoleNeeds;
 module.exports.repairOnboardingRoles = repairOnboardingRoles;
 module.exports.sendOnboardingReminder = sendOnboardingReminder;
+module.exports.applyProfileRoles = applyProfileRoles;
+module.exports.reconcileProfileRoles = reconcileProfileRoles;
+module.exports.missingRoleProfileSnapshot = missingRoleProfileSnapshot;
+module.exports.postRoleProfileReminder = postRoleProfileReminder;

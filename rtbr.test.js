@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildRtbrPayload } = require('./rtbr');
+const { buildRtbrPayload, rankRtbrStudents } = require('./rtbr');
 
 test('RTBR payload ranks by total and limits the published list', () => {
   const payload = buildRtbrPayload([
@@ -15,6 +15,14 @@ test('RTBR payload ranks by total and limits the published list', () => {
   assert.doesNotMatch(payload.embeds[0].description, /Third/);
   assert.match(payload.embeds[0].description, /1 interviews\/15 pts/);
   assert.deepEqual(payload.allowedMentions, { parse: ['everyone'] });
+});
+
+test('RTBR role selection is deterministic, score-positive, and quantity bounded', () => {
+  const ranked = rankRtbrStudents([
+    { discordId: '2', total: 10 }, { discordId: '1', total: 10 },
+    { discordId: '3', total: 0 }, { discordId: '4', total: 20 },
+  ], 2);
+  assert.deepEqual(ranked.map(student => student.discordId), ['4', '1']);
 });
 
 test('RTBR payload is empty when backend has no scored students', () => {

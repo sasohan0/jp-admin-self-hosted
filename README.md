@@ -167,14 +167,28 @@ Daily essentials:
 | Health | `!doctor` | Private; no student ping |
 | Permissions | `!checkperms` | Private; no student ping |
 | Students | `!syncmembers` | Updates durable roster/tracking rows |
+| Profile roles | `!rolerepair [#channel]` | Repairs saved roles; mentions only students missing required role data |
 | Attendance | `!formstatus`, then `!openform` / `!closeform` | Open/close posts are student-facing |
 | Job trackers | `!checkjobsheets YYYY-MM-DD` | Private read-only audit; no ping/write |
 | Combined readiness | `!checkpipelines YYYY-MM-DD` | Private diagnostic |
-| Leave review | `!leaves` | Decisions notify only the requesting student |
+| Leave review | `!openleaves` | Decisions notify only the requesting student |
 | Weekly report | `!weeklyreport` | Posts the performance leaderboard |
 | Settings | `!control` | Private overview |
 
-All 139 commands are categorized in [`MENTOR_COMMAND_REFERENCE.md`](MENTOR_COMMAND_REFERENCE.md). The running bot's private `!help` command is the authoritative command center.
+Role profiles are independent: `Division · ...`, Dhaka-only `Dhaka Area · ...`,
+availability, work mode, English level, and one role per honestly selected skill.
+The web intake shows the required Dhaka-area question only after Dhaka is
+selected. Existing members can use the private Discord questionnaire when data
+is missing; `!rolerepair #discussion` processes saved answers sequentially and
+rementions only the remaining incomplete students once after two hours. It does
+not delete legacy roles, channels, messages, or Sheet data.
+
+Weekly RTBR qualification is also a role. Use `!rtbr top 10`, `!rtbr days 7`,
+and `!rtbr time 20:00` in private `#bot-admin`; the weekly run adds the role to
+the current qualifiers and removes it from members outside the configured top
+quantity.
+
+All 142 commands are categorized in [`MENTOR_COMMAND_REFERENCE.md`](MENTOR_COMMAND_REFERENCE.md). The running bot's private `!help` command is the authoritative command center.
 
 ## Updating your copy later
 
@@ -197,6 +211,7 @@ This public repository is a release source; your private repository owns your de
 | `!setup` ignored | Enable both privileged intents and verify Administrator/role hierarchy |
 | Apps Script test fails | Verify `/exec`, **Anyone** access, and the matching secret |
 | Existing students missing | Enable Server Members Intent, then run `!syncmembers` privately |
+| Location/skill roles missing | Run `!doctor onboarding`, then `!rolerepair [#channel]`; move the bot role higher if assignment fails |
 | Attendance mismatch | `!checkattendance` → `!repairattendance` → recheck |
 | Job count mismatch | `!checkjobsheets <date>` and verify the tracker tab/date; never delete history |
 | Channel issue | `!checkperms` → `!repairpermissions`; do not delete channels |

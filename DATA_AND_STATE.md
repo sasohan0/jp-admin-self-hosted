@@ -1,7 +1,7 @@
 # Data, Environment, and State Contracts
 
 The complete Apps Script source is stored in `Code-v19-FINAL.gs`; its internal
-backend version is now `v55`. This document records the contract shared by that
+backend version is now `v56`. This document records the contract shared by that
 backend and all bot callers. If an action or response changes, update both sides,
 the contract tests, and the deployed Apps Script Web App version.
 
@@ -176,7 +176,7 @@ base channel map.
 - Callers expect JSON. A persistent HTML/DOCTYPE or `Unexpected token '<'`
   usually means a stale deployment, incorrect Web App access setting, or an
   archived/wrong `/exec` URL; a one-off occurrence can be a Google edge error.
-- `doctor.js` currently expects backend health version `v55`.
+- `doctor.js` expects backend health version `v56`, except the intentionally frozen closing EJP-13 backend at v55.
 - API executions open the explicitly stored `JP_SPREADSHEET_ID`; they do not
   depend on an active editor spreadsheet in Web App requests.
 - Enrollment and attendance response-tab names are stored separately so copied
@@ -246,7 +246,7 @@ base channel map.
 | `mailerstatus` | `mailer.js` | Returns remaining Apps Script daily recipient quota plus a bounded recent batch summary. It never returns secrets or message bodies. |
 | `sendCohortEmailBatch` | `mailer.js` | Sends one validated plain-text group with students only in BCC. `Mailer_Log` reserves the guild/date/type/part batch key before Gmail draft-send, preventing retries from duplicating a sent/pending batch and recording the returned Gmail message ID. |
 | `submitStudentProfile` | `student-data-survey.js` | Private modal submission keyed by the current Discord member ID. Student submissions are rate-limited and fill only missing authoritative values; supervisor submissions from `!editprofile` are explicitly marked as authoritative corrections. A missing Roster Review row is created safely, hired/left status is preserved, onboarding division can fill a missing region, and a changed real/provisional email migrates operational identity/history. Active successful writes synchronize All Data, Bot_Map, Attendance, all three activity matrices, Job_Sheets, and Roster Review without returning private values. |
-| `submitIntakeApplication` | `intake-portal.js` | Idempotently writes one OAuth-bound application to `Intake Responses` and upserts its contact values into `All Data`. It deliberately does not activate Bot_Map or tracking rows. |
+| `submitIntakeApplication` | `intake-portal.js` | Idempotently writes one OAuth-bound application to `Intake Responses` and authoritatively updates its mutable contact/location values in `All Data` after Discord/email conflict checks. Dhaka area is conditional; outside-Dhaka profiles store no area. It deliberately does not activate Bot_Map or tracking rows. |
 | `updateIntakeApplicationStatus` | `intake-portal.js` | Marks the saved application synchronized or action-required without resubmitting answers. |
 | `recordProfileSurveyDeliveries` | `student-data-survey.js` | One batched delivery receipt write after DM attempts: `SENT`, `DM BLOCKED`, or `NOT IN SERVER`; completed profiles are never downgraded. For a brand-new join, it safely creates the incomplete Roster Review intake row without a full-roster Apps Script execution. |
 | `repairAttendanceRoster` | `attendance.js` | Adds/refreshes all active Discord-linked Bot_Map identities in Attendance while preserving every date mark and manual value. |
@@ -278,10 +278,11 @@ The backend `setState/getstate/getstates` facility is used as a key-value store.
 | `excl_<guildId>` | `exclude.js` / roster | Comma-separated Discord user IDs. |
 | `inactive_student_meta_v1_<guildId>` | `exclude.js`, `inactive-controls.js` | Per-student inactive date, source, reason, and recording timestamp for the private control panel. Existing warning timestamps are used only as a safe legacy fallback; unknown legacy dates are never invented. Verified activation removes the student's metadata. |
 | `warning_report_last_v1_<guildId>` | `warning-controls.js` | Last cohort-local date whose scheduled private warning report completed. It makes the 30-minute recovery window restart-safe and duplicate-safe. Manual `!warningreport` does not change this marker. |
-| `ob_<guildId>_user_<userId>` | `onboarding.js` | JSON private onboarding record. |
+| `ob_<guildId>_user_<userId>` | `onboarding.js` | JSON Discord-ID-keyed role profile: division, conditional Dhaka area, availability, work mode, English level, multiple skills, rules acceptance, and optional private placement answers. Authenticated intake resubmission updates mutable values. |
 | `ob_<guildId>_rules_message` | `onboarding.js` | Official rules Discord message ID. |
 | `ob_<guildId>_panel_message` | `onboarding.js` | Persistent welcome-panel message ID. |
-| `ob_<guildId>_finalized` | `onboarding.js` | `1` after a failure-free final grouping run. |
+| `ob_<guildId>_role_reminder_v1` | `onboarding.js` | One pending role-profile follow-up `{channelId,dueAt,createdAt}`. Startup restores the timer; completion or a clean repair clears it. |
+| `ob_<guildId>_finalized` | Legacy onboarding state | Historical fruit-team finalization marker retained for compatibility; new role profiles neither read nor write it during normal operation. |
 | `fwd_<hubGuildId>_enabled` | `forwarder.js` | `1` or `0` for the explicit forwarding hub. |
 | `fwd_<hubGuildId>_source` | `forwarder.js` | Source channel ID. |
 | `fwd_<hubGuildId>_dest` | `forwarder.js` | Destination channel ID. |

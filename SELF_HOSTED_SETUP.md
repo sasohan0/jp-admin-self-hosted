@@ -145,6 +145,18 @@ Then run these private commands:
 
 Diagnostics deliberately suppress mentions, so they do not ping students. Setup is complete when the required backend, permissions, roster, and schedules are healthy. Some optional `!doctor` items can remain disabled when you intentionally did not configure that feature, such as Groq.
 
+Before students arrive, also run `!doctor onboarding`. After existing students
+are present, use `!rolerepair #discussion` deliberately: it assigns independent
+division, Dhaka-area, availability, work-mode, English and honest multi-skill
+roles from saved intake data, then mentions only students whose required role
+data is missing. It repeats the reminder once after two hours for only those
+still incomplete. It never deletes old roles or data. A web-intake resubmission
+updates the student's existing Discord-linked profile and roles automatically.
+
+Configure weekly **Right to Be Referred** membership at any time in private
+`#bot-admin` with `!rtbr top <1-25>`, `!rtbr days <1-90>`, and
+`!rtbr time HH:MM`.
+
 Now open `MENTOR_OPERATIONS_GUIDE.md`. It explains how to start attendance and job tracking, operate the weekly reports, review leave requests, and avoid student pings during diagnostics. Use `MENTOR_COMMAND_REFERENCE.md` when you need the complete command list.
 
 ## Adding a new cohort to the existing unified JP ADMIN bot

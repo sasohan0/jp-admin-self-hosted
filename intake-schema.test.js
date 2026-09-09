@@ -14,7 +14,8 @@ test('private placement answers map to the existing onboarding role vocabulary',
     availability: 'Searching, but limited availability',
     studyStage: 'University 1st–3rd year',
   }), {
-    gender: 'private', division: 'Abroad', availability: 'limited', studyStage: 'university_early',
+    gender: 'private', division: 'Abroad', subregion: '', availability: 'limited',
+    studyStage: 'university_early', jobFocus: '', englishLevel: '', skills: [],
   });
 });
 
@@ -90,9 +91,42 @@ test('intake validation returns structured answers and canonical tracking identi
     subregion: 'Mirpur',
   });
   assert.deepEqual(result.onboarding, {
-    gender: '', division: 'Dhaka', availability: '', studyStage: '',
+    gender: '', division: 'Dhaka', subregion: 'Mirpur', availability: '',
+    studyStage: '', jobFocus: '', englishLevel: '', skills: ['React.js', 'Node.js'],
   });
   assert.equal(result.answers.find(answer => answer.semanticKey === 'technologies').value, 'React, Node');
+});
+
+test('subregion is required only for Dhaka and hidden values cannot leak through', () => {
+  const fields = portalFieldsFromTemplate(defaultTemplate());
+  const common = new URLSearchParams({
+    name: 'Student', enrollmentemail: 'student@example.com', phone: '+8801712345678',
+    genderpreference: 'Male', studystage: 'Graduated / not currently studying',
+    availability: 'Full-time job ready now', jobfocus: 'Remote', onsiteareas: 'N/A',
+    remotereason: 'I can work remotely.', education: 'CSE — Graduate',
+    englishcommunication: '4', experience: 'Fresher', jobholder: 'No',
+    nextexam: 'None', jobmotivation: 'Career growth', resume: 'https://example.com/resume',
+    linkedin: 'https://linkedin.com/in/example', linkedinrestricted: 'No',
+    github: 'https://github.com/example', bestproject: 'https://example.com/project',
+    jobseriousness: 'হ্যাঁ—আমি নিয়মিত সময় দিতে ও task করতে প্রস্তুত',
+    specialreferral: 'না / এখনো প্রস্তুত নই',
+    rulescommitment: 'Yes — I will read and follow them',
+  });
+  common.append('technologies', 'Python');
+  common.append('positions', 'Software Engineer');
+  common.append('freetimeslots', 'সকাল ১১:০০ — ১:০০');
+
+  const outside = new URLSearchParams(common);
+  outside.set('region', 'Sylhet');
+  outside.set('subregion', 'Mirpur');
+  const outsideResult = validateIntakeSubmission(fields, outside);
+  assert.equal(outsideResult.errors.some(error => /Dhaka area/i.test(error)), false);
+  assert.equal(outsideResult.profile.subregion, '');
+
+  const dhaka = new URLSearchParams(common);
+  dhaka.set('region', 'Dhaka');
+  const dhakaResult = validateIntakeSubmission(fields, dhaka);
+  assert.ok(dhakaResult.errors.some(error => /Dhaka area/i.test(error)));
 });
 
 test('intake validation rejects incomplete core identity and unrecognized choices', () => {

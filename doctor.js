@@ -21,7 +21,12 @@ const { getSetupDate } = require('./state');
 const { getIntakeSettings, portalBaseUrl, portalConfigProblems, validateIntakeBackend } = require('./intake-settings');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
 
-const EXPECTED_VERSION = 'v55';
+const EXPECTED_VERSION = 'v56';
+function expectedVersion(cohort) {
+  // EJP-13 is intentionally closing and must not be redeployed for this role
+  // rollout. Its v55 backend remains a supported frozen exception.
+  return /^EJP-13$/i.test(String(cohort?.name || '').trim()) ? 'v55' : EXPECTED_VERSION;
+}
 const REQUIRED_PERMS = ['ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory'];
 
 function formatRosterDoctor(roster, review) {
@@ -57,7 +62,8 @@ const CHECKS = {
     const h = await apiRaw(cohort, { action: 'health' });
     if (h.error) throw new Error(h.error);
     const missing = Object.entries(h.tabs || {}).filter(([, ok]) => !ok).map(([t]) => t);
-    const verNote = h.version === EXPECTED_VERSION ? `version ${h.version}` : `⚠️ version ${h.version || 'old'} (expected ${EXPECTED_VERSION} — redeploy New version!)`;
+    const expected = expectedVersion(cohort);
+    const verNote = h.version === expected ? `version ${h.version}` : `⚠️ version ${h.version || 'old'} (expected ${expected} — redeploy New version!)`;
     if (missing.length) return `reachable, ${verNote}; missing tabs: ${missing.join(', ')} (created on first use)`;
     return `reachable, ${verNote}, all ${Object.keys(h.tabs).length} tabs present`;
   },

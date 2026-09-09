@@ -47,9 +47,9 @@ The English-only default keeps the non-Discord STRIDE data-collection fields.
 The immutable OAuth username remains in the fixed Discord columns, while the
 portal's own rules commitment replaces the old pre-join Discord questions.
 When the working template contains the built-in private placement questions,
-their canonical gender/division/availability/study-stage values prefill the
-existing onboarding record after admission. The member still accepts the rules
-in Discord before the existing role assignment/finalization flow runs.
+its canonical profile values update the Discord-ID-keyed onboarding record
+after admission and immediately reconcile the non-private roles. The member
+still accepts the rules in Discord to finish onboarding.
 
 ## Process startup
 
@@ -211,7 +211,7 @@ checked during changes.
 `roster.js` loads `Bot_Map` plus manual exclusions through one `action=roster`
 execution and caches them for ten minutes. Discord membership is the active
 roster source of truth. `!syncmembers` submits only current non-bot,
-non-supervisor members to Apps Script v55, which corroborates current or
+non-supervisor members to Apps Script v56, which corroborates current or
 archived Discord IDs, unique normalized names, `All Data`, and enrollment
 identity fields before rebuilding `Bot_Map`. `All Data` is the preferred
 contact/location source and `Bot_Map Archive` fills missing historical region
@@ -287,7 +287,7 @@ submission controls mood/interview summaries, and an explicit no-interview
 confirmation vetoes a contradictory Yes. The shared form trigger continues to
 process enrollment submissions.
 
-Apps Script v55 also exposes a private date-bounded absence report and
+Apps Script v56 also exposes a private date-bounded absence report and
 attendance roster/response audit. The Node
 side parses `current`, `previous`, a date, or month-week phrases such as
 `july week 1`, then renders contact-rich TSV only inside `#bot-admin`. After
@@ -298,7 +298,7 @@ three-or-more recorded-session absence runs from the current or previous week;
 Form definitions originate in `form-templates.js`. `cohort-admin.js` stores the
 working enrollment and attendance definitions separately in guild-namespaced
 Apps Script state and can copy them into named reusable pairs. Creation sends a
-validated definition to Apps Script v55, which supports text, paragraph,
+validated definition to Apps Script v56, which supports text, paragraph,
 choice, checkbox, scale, date, and time fields. Semantic field keys are saved
 with the created Forms so edited student-facing wording does not break roster
 or attendance header lookup.
@@ -531,23 +531,28 @@ role or `@everyone` cannot accidentally notify STRIDE members.
 
 ### Onboarding flow
 
-`onboarding.js` posts a public welcome and rules link but collects answers through
-ephemeral selects. Apps Script state persists gender preference, division,
-availability, study stage, acceptance, group, and completion timestamps.
+`onboarding.js` posts a public welcome and rules link but collects role-profile
+answers through ephemeral selects. Apps Script state persists division,
+conditional Dhaka area, availability, work mode, English level, multiple honest
+skills, rules acceptance, and any private placement answers supplied by intake.
 Bulk member lists use the shared rate-limit-aware `discord-members.js` cache;
 the onboarding serialization queue consumes both success and rejection paths
 so a Discord opcode-8 rate limit cannot terminate the process.
 
-After gender/division, a queued assignment gives a probable fruit team role.
-`onboarding-groups.js` owns the pure final distribution: same division, maximum
-six, and declared female/male separation where possible. Strict majority
-completion triggers finalization; completed late voters trigger rebalancing.
-Readiness roles are independent of identity roles.
+Every saved answer is serialized per guild and reconciled into independent
+`Division ·`, `Dhaka Area ·`, `Availability ·`, `Work Mode ·`, `English ·`, and
+multi-value `Skill ·` roles. The migration removes legacy `Bootcamp · ... ·
+Fruit` assignments from members without deleting role objects or history.
+Intake resubmission updates the same Discord-ID-keyed record and triggers the
+same reconciliation. A role sync missed while Discord is offline is marked
+pending and repaired with the explicit `!rolerepair` command; reconnect itself
+does not mutate an entire cohort. Only a pending two-hour reminder timer is
+restored at startup.
 
-`group-activities.js` consumes only these identity-region roles. It creates or
+`group-activities.js` consumes only populated `Division ·` roles. It creates or
 reuses `#group-activities` and one private thread per populated role, adding
 the role members individually because Discord private threads cannot directly
-grant membership to a role. Readiness roles are never used for these threads.
+grant membership to a role. Availability and skill roles are never used for these threads.
 
 ### New-server setup flow
 

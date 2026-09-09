@@ -23,11 +23,22 @@ test('targeted onboarding reminder and role repair stay separate from profile re
 });
 
 test('role audit identifies only roles supported by saved onboarding answers', () => {
-  const record = { gender: 'female', division: 'Dhaka', availability: 'full_time' };
-  assert.deepEqual(onboardingRoleNeeds(record, []), { identity: true, readiness: true });
-  assert.deepEqual(onboardingRoleNeeds(record, ['Bootcamp · Mango · Dhaka', 'Job Ready · Full-Time']), {
-    identity: false,
-    readiness: false,
+  const record = {
+    division: 'Dhaka', subregion: 'Mirpur', availability: 'full_time',
+    jobFocus: 'remote', englishLevel: 'advanced', skills: ['Python'],
+  };
+  const expected = [
+    'Division · Dhaka', 'Dhaka Area · Mirpur', 'Availability · Full-Time Ready',
+    'Work Mode · Remote', 'English · Advanced', 'Skill · Python',
+  ];
+  assert.deepEqual(onboardingRoleNeeds(record, []), {
+    missing: expected, stale: [], profileFields: [],
   });
-  assert.deepEqual(onboardingRoleNeeds({}, []), { identity: false, readiness: false });
+  assert.deepEqual(onboardingRoleNeeds(record, [...expected, 'Bootcamp · Dhaka · Mango']), {
+    missing: [], stale: ['Bootcamp · Dhaka · Mango'], profileFields: [],
+  });
+  assert.deepEqual(onboardingRoleNeeds({}, []), {
+    missing: [], stale: [],
+    profileFields: ['division', 'availability', 'job preference', 'English level', 'skills'],
+  });
 });

@@ -1,6 +1,15 @@
 // Pure enrollment-template -> portal-field conversion and submission validation.
 
-const CORE_KEYS = ['name', 'enrollmentEmail', 'phone', 'region', 'subregion'];
+const {
+  normalizeAvailability,
+  normalizeDivision,
+  normalizeSkills,
+  normalizeSubregion,
+  normalizeWorkMode,
+  englishLevel,
+} = require('./role-profile');
+
+const CORE_KEYS = ['name', 'enrollmentEmail', 'phone', 'region'];
 const URL_KEYS = new Set(['resume', 'linkedin', 'github', 'portfolio', 'bestProject']);
 
 function slug(value) {
@@ -31,6 +40,10 @@ function portalFieldsFromTemplate(template) {
     max: Number(field?.max) || 5,
     lowLabel: String(field?.lowLabel || '').trim(),
     highLabel: String(field?.highLabel || '').trim(),
+    showWhen: field?.showWhen && typeof field.showWhen === 'object'
+      ? { key: String(field.showWhen.key || ''), equals: String(field.showWhen.equals || '') }
+      : null,
+    requiredWhenVisible: Boolean(field?.requiredWhenVisible),
   })).filter(field => field.key !== 'discordUsername');
 }
 
@@ -55,16 +68,7 @@ function onboardingAnswers(byKey) {
   const gender = {
     female: 'female', male: 'male', 'prefer not to say': 'private',
   }[String(byKey.genderPreference || '').trim().toLowerCase()] || '';
-  const region = clean(byKey.region, 100);
-  const division = ['Barishal', 'Chattogram', 'Dhaka', 'Khulna', 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet', 'Abroad']
-    .includes(region) ? region : (region ? 'Other' : '');
-  const availabilityText = String(byKey.availability || '').toLowerCase();
-  const availability = availabilityText.includes('full-time')
-    ? 'full_time'
-    : availabilityText.includes('limited')
-      ? 'limited'
-      : availabilityText.includes('study first') || availabilityText.includes('not job searching')
-        ? 'study' : '';
+  const division = normalizeDivision(byKey.region);
   const stageText = String(byKey.studyStage || '').toLowerCase();
   let studyStage = '';
   if (stageText.includes('graduated')) studyStage = 'graduated';
@@ -73,7 +77,22 @@ function onboardingAnswers(byKey) {
   else if (/college|hsc|board/.test(stageText)) studyStage = 'college';
   else if (stageText === 'school') studyStage = 'school';
   else if (stageText) studyStage = 'other';
-  return { gender, division, availability, studyStage };
+  return {
+    gender,
+    division,
+    subregion: normalizeSubregion(byKey.subregion, division),
+    availability: normalizeAvailability(byKey.availability),
+    studyStage,
+    jobFocus: normalizeWorkMode(byKey.jobFocus),
+    englishLevel: englishLevel(byKey.englishCommunication),
+    skills: normalizeSkills(byKey.technologies),
+  };
+}
+
+function fieldIsVisible(field, byKey) {
+  if (!field.showWhen?.key) return true;
+  return String(byKey[field.showWhen.key] || '').trim().toLowerCase() ===
+    String(field.showWhen.equals || '').trim().toLowerCase();
 }
 
 function normalizeAnswer(field, params) {
@@ -98,8 +117,11 @@ function validateIntakeSubmission(fields, params) {
   const answers = [];
   const byKey = {};
   for (const field of fields) {
-    let value = normalizeAnswer(field, params);
-    if (field.required && !value) errors.push(`${field.title} is required.`);
+    const visible = fieldIsVisible(field, byKey);
+    let value = visible ? normalizeAnswer(field, params) : '';
+    if (visible && (field.required || field.requiredWhenVisible) && !value) {
+      errors.push(`${field.title} is required.`);
+    }
     if (field.type === 'email' && value) {
       value = value.toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)) {
@@ -131,6 +153,10 @@ function validateIntakeSubmission(fields, params) {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     errors.push('Enrollment email is invalid.');
   }
+  const division = normalizeDivision(byKey.region);
+  if (division === 'Dhaka' && !normalizeSubregion(byKey.subregion, division)) {
+    errors.push('Current Dhaka area is required when Dhaka is selected.');
+  }
 
   return {
     answers,
@@ -141,7 +167,7 @@ function validateIntakeSubmission(fields, params) {
       email,
       phone: phoneDigits,
       region: clean(byKey.region, 100),
-      subregion: clean(byKey.subregion, 100),
+      subregion: normalizeSubregion(byKey.subregion, division),
     },
   };
 }
@@ -149,6 +175,7 @@ function validateIntakeSubmission(fields, params) {
 module.exports = {
   CORE_KEYS,
   fieldId,
+  fieldIsVisible,
   onboardingAnswers,
   portalFieldsFromTemplate,
   validateIntakeSubmission,

@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v55 - resilient attendance rejection policy)
+//  JP ADMIN SHEET + BOT API (v56 - independent intake role profiles)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v55';
+const VERSION = 'v56';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -3112,15 +3112,15 @@ var DEFAULT_ENROLLMENT = [
   { key: 'enrollmentEmail', title: 'Email (যে ইমেইল দিয়ে কোর্সে এনরোল করেছেন)', type: 'email', required: true, help: 'Please use the same email as your course enrollment. এই ইমেইল দিয়েই আপনার Discord ও attendance record মিলানো হবে।' },
   { key: 'phone', title: 'WhatsApp Number (আপনার WhatsApp নম্বর)', type: 'text', required: true, help: 'Include country code when possible, for example +8801XXXXXXXXX.' },
   { key: 'region', title: 'Current Region (Division) — আপনি বর্তমানে কোন বিভাগ বা দেশে আছেন?', type: 'choice', required: true, choices: ['Dhaka','Chattogram','Rajshahi','Khulna','Barishal','Sylhet','Rangpur','Mymensingh','Abroad'], other: true },
-  { key: 'subregion', title: 'Current Subregion / Area — আপনার বর্তমান এলাকা', type: 'text', required: true, help: 'Example: Mirpur, Uttara, Cumilla, London, Dubai.' },
-  { key: 'genderPreference', title: 'Gender (kept private and used only for team placement)', type: 'choice', required: true, choices: ['Female','Male','Prefer not to say'] },
+  { key: 'subregion', title: 'Current Dhaka Area — আপনি ঢাকার কোন এলাকায় থাকেন?', type: 'choice', required: false, choices: ['Mirpur','Mohammadpur','Gazipur','Savar','Uttara','Khilgaon','Banasree','Rampura','Jatrabari','Dhanmondi','Gulshan','Banani','Motijheel','Old Dhaka','Other Dhaka'], help: 'Answer only when Dhaka is selected. The web intake makes this conditional and required for Dhaka.' },
+  { key: 'genderPreference', title: 'Gender (kept private; never shown as a Discord role)', type: 'choice', required: true, choices: ['Female','Male','Prefer not to say'] },
   { key: 'studyStage', title: 'Current study stage', type: 'choice', required: true, choices: ['Graduated / not currently studying','University final year','University 1st–3rd year','College / HSC / board exams','School','Other'] },
   { key: 'availability', title: 'Current job-search availability', type: 'choice', required: true, choices: ['Full-time job ready now','Searching, but limited availability','Not job searching — study first'] },
   { key: 'jobFocus', title: 'Job Focus / Job preference (আপনার জব প্রেফারেন্স)', type: 'choice', required: true, choices: ['Remote','Onsite','Hybrid (Remote বা Onsite—দুইটিতেই আগ্রহী)'] },
   { key: 'onsiteAreas', title: 'অনসাইটে জব করতে ইচ্ছুক হলে কোন এরিয়াতে করবেন?', type: 'paragraph', help: 'Example: Dhaka, Chattogram, Sylhet. Remote-only হলে N/A লিখুন।' },
   { key: 'remoteReason', title: 'যদি Remote job focused হন, তার কারণ বিস্তারিত লিখুন। Onsite/Hybrid হলে N/A লিখুন।', type: 'paragraph', required: true },
   { key: 'education', title: 'আপনার বর্তমান শিক্ষাগত ব্যাকগ্রাউন্ড', type: 'choice', required: true, choices: ['CSE — Student','CSE — Graduate','Non-CSE — Student','Non-CSE — Graduate','HSC','Diploma'], other: true },
-  { key: 'englishCommunication', title: 'আপনার English communication skill-এ নিজেকে কত দিবেন?', type: 'scale', required: true, min: 1, max: 5, lowLabel: 'Poor', highLabel: 'Excellent' },
+  { key: 'englishCommunication', title: 'আপনার English communication skill-এ নিজেকে কত দিবেন?', type: 'scale', required: true, min: 1, max: 5, lowLabel: 'Basic', highLabel: 'Expert' },
   { key: 'experience', title: 'Experience (আপনার experience level)', type: 'choice', required: true, choices: ['Fresher','Experienced'] },
   { key: 'jobHolder', title: 'Currently Job Holder? (আপনি কি বর্তমানে কোনো চাকরি করছেন?)', type: 'choice', required: true, choices: ['Yes','No'] },
   { key: 'nextExam', title: 'আপনার next exam-এর সম্ভাব্য date কবে?', type: 'text', required: true, help: 'Example: April, next month, specific date, অথবা পরীক্ষা নেই।' },
@@ -3131,7 +3131,7 @@ var DEFAULT_ENROLLMENT = [
   { key: 'github', title: 'আপনার GitHub link', type: 'text', required: true },
   { key: 'portfolio', title: 'আপনার Portfolio link', type: 'text', help: 'Portfolio না থাকলে N/A লিখতে পারেন।' },
   { key: 'bestProject', title: 'Best project link (আপনার সেরা project)', type: 'text', required: true },
-  { key: 'technologies', title: 'আপনি কোন কোন technology জানেন?', type: 'checkbox', required: true, choices: ['JavaScript','TypeScript','React.js','Next.js','Redux','Node.js','Express.js','Prisma','MongoDB','SQL','MySQL','PostgreSQL','NextAuth / Better Auth','Java','C / C++','Python','Stripe / Payment Gateway'], other: true },
+  { key: 'technologies', title: 'আপনার সত্যিকারের production-ready skills নির্বাচন করুন (একাধিক নির্বাচন করা যাবে)', type: 'checkbox', required: true, choices: ['Laravel','Shopify','React Native','WordPress / Elementor','UI / UX','Flutter','PostgreSQL','Prisma','Django','Python','C++','Linux','DevOps','n8n','AI Engineering','AI Agents','Machine Learning','Data Science','Data Analytics','Networking','JavaScript','TypeScript','React.js','Node.js','Still learning / no production-ready skill yet'], other: true, help: 'Only select skills you can genuinely demonstrate. Do not claim a skill you have not learned.' },
   { key: 'positions', title: 'আপনি কোন কোন position-এ apply করতে চান?', type: 'checkbox', required: true, choices: ['Full Stack Developer','Frontend Developer','Backend Developer','Software Engineer'], other: true },
   { key: 'freeTimeSlots', title: 'দিনের কোন সময়ে আপনি minimum ১ ঘণ্টা free থাকেন?', type: 'checkbox', required: true, choices: ['সকাল ১১:০০ — ১:০০','দুপুর ৩:৩০ — ৫:০০','সন্ধ্যা ৭:০০ — ৯:০০'], other: true },
   { key: 'jobSeriousness', title: 'আপনার কি সত্যিই job দরকার এবং এই bootcamp নিয়ে serious?', type: 'choice', required: true, choices: ['হ্যাঁ—আমি নিয়মিত সময় দিতে ও task করতে প্রস্তুত','এখন খুব জরুরি নয়, তবে নিয়মিত continue করতে চাই','এখন job focus করতে পারব না / continue করতে চাই না'] },
@@ -4243,7 +4243,8 @@ function missingStudentProfileFields(reviewRow) {
   if (!validStudentProfileEmail(row[4])) missing.push('email');
   if (!String(row[6] || '').replace(/\D/g, '')) missing.push('phone');
   if (!cleanStudentProfileText(row[7], 100)) missing.push('region');
-  if (!cleanStudentProfileText(row[8], 100)) missing.push('subregion');
+  if (/^dhaka$/i.test(cleanStudentProfileText(row[7], 100)) &&
+      !cleanStudentProfileText(row[8], 100)) missing.push('subregion');
   if (String(row[3] || '').trim().toUpperCase() === 'PROFILE INCOMPLETE' &&
       missing.indexOf('email') === -1) {
     missing.push('email');
@@ -4942,10 +4943,13 @@ function upsertAllDataFromIntake(profile) {
     throw new Error('This Discord account is already linked to a different enrollment email; ask your mentor to correct it');
   }
   row[columns.email] = profile.email;
-  if (!String(row[columns.name] || '').trim()) row[columns.name] = profile.name;
-  if (!String(row[columns.phone] || '').trim()) row[columns.phone] = profile.phone;
-  if (!String(row[columns.region] || '').trim()) row[columns.region] = profile.region;
-  if (!String(row[columns.subregion] || '').trim()) row[columns.subregion] = profile.subregion;
+  // A Discord-OAuth-bound intake resubmission is the student's authoritative
+  // update path for mutable profile details. Immutable Discord/email conflicts
+  // above still fail closed.
+  row[columns.name] = profile.name;
+  row[columns.phone] = profile.phone;
+  row[columns.region] = profile.region;
+  row[columns.subregion] = profile.subregion;
   row[columns.username] = profile.username;
   row[columns.discordId] = "'" + profile.discordId;
   ensureSheetSize(sheet, rowNumber, width);
@@ -4971,8 +4975,9 @@ function submitIntakeApplication(body) {
     username: cleanStudentProfileText(body.username, 100),
     discordId: discordId,
   };
-  if (!profile.email || !profile.name || !profile.phone || !profile.region || !profile.subregion) {
-    return { error: 'Name, real enrollment email, phone, region and area are required' };
+  if (!profile.email || !profile.name || !profile.phone || !profile.region ||
+      (/^dhaka$/i.test(profile.region) && !profile.subregion)) {
+    return { error: 'Name, real enrollment email, phone and region are required; Dhaka members must also select an area' };
   }
   return withScriptLock(function () {
     const schema = ensureIntakeResponseSchema(answers);
@@ -5052,12 +5057,24 @@ function saveOnboardingFromIntake(guildId, discordId, input) {
   const allowedDivision = ['Barishal', 'Chattogram', 'Dhaka', 'Khulna', 'Mymensingh', 'Rajshahi', 'Rangpur', 'Sylhet', 'Abroad', 'Other'];
   const allowedAvailability = ['full_time', 'limited', 'study'];
   const allowedStudy = ['graduated', 'university_final', 'university_early', 'college', 'school', 'other'];
+  const allowedJobFocus = ['remote', 'onsite', 'hybrid'];
+  const allowedEnglish = ['basic', 'advanced', 'expert'];
   const gender = String(input.gender || '');
   const division = String(input.division || '');
   const availability = String(input.availability || '');
   const studyStage = String(input.studyStage || '');
+  const subregion = cleanStudentProfileText(input.subregion, 100);
+  const jobFocus = String(input.jobFocus || '');
+  const englishLevel = String(input.englishLevel || '');
+  const skills = Array.isArray(input.skills)
+    ? input.skills.map(function (skill) {
+      return cleanStudentProfileText(skill, 80);
+    }).filter(Boolean).slice(0, 25)
+    : [];
   if (allowedGender.indexOf(gender) === -1 && allowedDivision.indexOf(division) === -1 &&
-      allowedAvailability.indexOf(availability) === -1 && allowedStudy.indexOf(studyStage) === -1) {
+      allowedAvailability.indexOf(availability) === -1 && allowedStudy.indexOf(studyStage) === -1 &&
+      allowedJobFocus.indexOf(jobFocus) === -1 && allowedEnglish.indexOf(englishLevel) === -1 &&
+      !skills.length) {
     return false;
   }
   const key = 'ob_' + guildId + '_user_' + discordId;
@@ -5066,13 +5083,22 @@ function saveOnboardingFromIntake(guildId, discordId, input) {
   try { record = JSON.parse(props.getProperty(key) || '{}'); }
   catch (e) { record = {}; }
   record.userId = discordId;
-  if (!record.gender && allowedGender.indexOf(gender) !== -1) record.gender = gender;
-  if (!record.division && allowedDivision.indexOf(division) !== -1) record.division = division;
-  if (!record.availability && allowedAvailability.indexOf(availability) !== -1) record.availability = availability;
-  if (!record.studyStage && allowedStudy.indexOf(studyStage) !== -1) record.studyStage = studyStage;
+  // A new authenticated intake submission updates mutable role-profile answers
+  // instead of leaving stale values from an earlier submission.
+  if (allowedGender.indexOf(gender) !== -1) record.gender = gender;
+  if (allowedDivision.indexOf(division) !== -1) {
+    record.division = division;
+    record.subregion = division === 'Dhaka' ? subregion : '';
+  }
+  if (allowedAvailability.indexOf(availability) !== -1) record.availability = availability;
+  if (allowedStudy.indexOf(studyStage) !== -1) record.studyStage = studyStage;
+  if (allowedJobFocus.indexOf(jobFocus) !== -1) record.jobFocus = jobFocus;
+  if (allowedEnglish.indexOf(englishLevel) !== -1) record.englishLevel = englishLevel;
+  if (skills.length) record.skills = skills;
   record.updatedAt = new Date().toISOString();
   props.setProperty(key, JSON.stringify(record));
-  return Boolean(record.gender || record.division || record.availability || record.studyStage);
+  return Boolean(record.gender || record.division || record.availability || record.studyStage ||
+    record.jobFocus || record.englishLevel || (record.skills && record.skills.length));
 }
 
 function submitStudentProfile(body) {
@@ -5132,8 +5158,8 @@ function submitStudentProfile(body) {
     if (fields.region !== undefined && !suppliedRegion) {
       return { error: 'Enter a division or current region' };
     }
-    if (fields.subregion !== undefined && !suppliedSubregion) {
-      return { error: 'Enter a district or current area; use N/A only when it truly does not apply' };
+    if (fields.subregion !== undefined && /^dhaka$/i.test(suppliedRegion) && !suppliedSubregion) {
+      return { error: 'Choose a Dhaka area when the current division is Dhaka' };
     }
 
     const current = readBotMap();
@@ -5191,6 +5217,7 @@ function submitStudentProfile(body) {
       username: cleanStudentProfileText(body.username, 100),
       discordId: discordId,
     };
+    if (!/^dhaka$/i.test(profile.region)) profile.subregion = '';
     // Student submissions only fill empty authoritative values. Existing
     // non-empty All Data values are never silently overwritten.
     if (!profile.name) profile.name = suppliedName;
@@ -5202,7 +5229,7 @@ function submitStudentProfile(body) {
     if (!profile.email) missing.push('email');
     if (!profile.phone) missing.push('phone');
     if (!profile.region) missing.push('region');
-    if (!profile.subregion) missing.push('subregion');
+    if (/^dhaka$/i.test(profile.region) && !profile.subregion) missing.push('subregion');
     if (missing.length) {
       return { error: 'Required profile fields are still missing: ' + missing.join(', ') };
     }

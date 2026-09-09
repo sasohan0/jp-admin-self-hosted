@@ -1,6 +1,6 @@
 # JP ADMIN — EJP Mentorship Bot Documentation
 
-**Version:** v3.31 (bot) / v55 expected by `!doctor` (Apps Script) · **Updated:** September 2026
+**Version:** v3.32 (bot) / v56 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
 **Stack:** Node.js (discord.js) on Render Free · Google Sheets + Apps Script (database, API, and scheduled wake-up) · Groq AI (llama-3.3-70b)
 
 ---
@@ -26,7 +26,7 @@
 | Region directory with WhatsApp + resume links                                                                 | #bot-admin                            | on command                    |
 | In-memory activity report (done / failed)                                                                      | #bot-admin                            | manual `!dailyreport`         |
 | Resources preservation + repost in new servers                                                                | #resources                            | 11 AM (1/day)                 |
-| Private onboarding, rules acceptance, max-six identity teams, and readiness roles                            | #welcome-to-the-bootcamp              | on join/member interaction    |
+| Private role profile, rules acceptance, independent location/availability/work-mode/English/skill roles       | #welcome-to-the-bootcamp              | on join/intake/member interaction |
 
 **Design principles:** Sheets is the durable database (restart-proof) · current Discord membership is the active-student source · `All Data` and Forms provide identity/contact information but never activate a student by themselves · supervisors are excluded everywhere by ID · any non-white identity row in `Bot_Map` or `Attendance` is inactive · `hired`/`left` status skips a student everywhere · empty question categories auto-refill via AI · discussion carries only important announcements.
 
@@ -34,7 +34,7 @@
 
 ## 2. Right-To-Be-Referred Score (rolling 7 days)
 
-Top scorers get **first access to mentor-special job referrals**. RTBR is shown in the Thursday weekly performance leaderboard and announced separately at 8 PM in #right-to-be-referred; fully auditable in the Sheet. Use `!schedule rtbr thu` once on cohorts that previously saved a Friday override.
+Top scorers get **first access to mentor-special job referrals** and the visible `Right to Be Referred` role. The weekly run removes the role from members who are no longer in the configured top quantity. Use `!rtbr top 10`, `!rtbr days 7`, `!rtbr time 20:00`, and `!schedule rtbr thu` to configure it.
 
 | Component           | Points                                                              |
 | ------------------- | ------------------------------------------------------------------- |
@@ -92,7 +92,20 @@ one short question; reply directly to that bot message in plain English within
 five minutes. It suggests the final command for review but never runs it.
 
 **Setup:** `/setup` or `!setup` (private four-step beginner guide; self-hosted server owner is the permanent recovery supervisor) · `!setupserver` (channels + discovery + intros + 3-day warm-up) · `!ensurechannels` (missing channels + permissions only; no reposts/warm-up reset) · `!repairpermissions` (overwrite-only retry) · `!supervisor list|add @user|remove @user` (server-local durable supervisor access, including signed-capsule persistence for self-hosting) · `!announceall` · `!editannouncement <message link>` (private editor for pinned bot rules/intros) · `!checkperms`
-**Onboarding:** `!onboardingpanel` · `!onboardingstatus` · `!onboardingreminder [#channel]` · `!onboardingrepair` · `!completioncheck` · `!completionreminder` · `!finalizegroups` · `!setrulesmessage <link>` · `!resetonboarding @member` · `!groupactivities setup|sync|status`
+**Onboarding:** `!onboardingpanel` · `!onboardingstatus` · `!onboardingreminder [#channel]` · `!rolerepair [#channel]` (`!onboardingrepair` alias) · `!completioncheck` · `!completionreminder` · `!setrulesmessage <link>` · `!resetonboarding @member` · `!groupactivities setup|sync|status`
+
+The intake and Discord fallback create independent roles rather than fruit
+teams: one `Division · ...`; one `Dhaka Area · ...` only for Dhaka; one each for
+availability, work mode, and English level; and every honestly selected
+`Skill · ...`. Outside-Dhaka members are not asked for an area. Re-submitting
+the OAuth intake updates mutable profile answers and roles without creating a
+duplicate student. Run `!rolerepair #discussion` after migration or manual role
+edits. It processes members sequentially, mentions only students still missing
+role-profile data, and makes one restart-safe follow-up after two hours.
+
+Discord does not expose per-message read receipts to bots for mentor or bot
+messages. Delivery, reactions, and button clicks can be observed, but none is a
+reliable silent “seen” list; JP ADMIN therefore does not claim one.
 **Identity:** pre-entry `!intake status|enable [slug]|disable|link` · automatic private join profile fallback (name, real email, phone, region, area) · `!syncmembers` · `!missingdata` / `!studentsurvey incomplete` (private dashboard/DM surveys) · `!studentsurvey attention [days] [send]` (incomplete plus no applications; preview before explicit send) · `!profilecheck` (refresh and verify all current members/profile coverage) · `!profilesurvey #channel` (mention incomplete students; answers stay private and Discord-ID-bound) · `!editprofile @student|DiscordID` (immediate supervisor correction with historical identity migration; raw ID avoids a ping) · `!studentstatus @student active|inactive` (activation/inactivation is atomic and verified across Discord, Bot_Map, Attendance, exclusions, metadata, warnings, and mutually exclusive status roles) · `!statusroles` · `!accessrules list|defaults|apply|allow|deny|remove` · `!studentstatuspanel` (active/inactive/protected counts and separate tap-to-manage lists) · `!activestudents [page N]` · `!inactivestudents` (private dated inactive list with individual/date/all activation controls; status changes require confirmation) · `!notapplying [days N]` · `!synchiredroles` · `!audit` · `!addstudent <email> @user` · `!students [region] [sub]` · `!studentreport` (private one/all/severe-needs-attention picker; every flagged student shows the reason; WhatsApp preview cards are suppressed)
 
 For clearer access commands, `!accessrules block @role #channel` denies viewing
@@ -202,7 +215,7 @@ and `!set rtbrtop`.
 
 **Rule of thumb: invite the bot with Administrator — all permission hassle disappears.**
 
-1. **Google:** create a Sheet → paste local backend v55 → CONFIG:
+1. **Google:** create a Sheet → paste local backend v56 → CONFIG:
    cohort name, blank FORM_ID if the bot creates Forms, new private SECRET_KEY
    → Deploy →
    **New deployment** → Web app → Execute as Me → **Anyone** → copy `/exec`

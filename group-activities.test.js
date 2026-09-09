@@ -4,9 +4,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { isIdentityRoleName } = require('./group-activities');
 
-test('group activities selects identity-region roles, not readiness roles', () => {
-  assert.equal(isIdentityRoleName('Bootcamp · Dhaka · Mango'), true);
-  assert.equal(isIdentityRoleName('Bootcamp · Abroad · Lychee'), true);
-  assert.equal(isIdentityRoleName('Job Ready · Full-Time'), false);
-  assert.equal(isIdentityRoleName('Study First · Not Job Ready'), false);
+test('group activities selects division roles, not legacy fruit or profile roles', () => {
+  assert.equal(isIdentityRoleName('Division · Dhaka'), true);
+  assert.equal(isIdentityRoleName('Division · Abroad'), true);
+  assert.equal(isIdentityRoleName('Bootcamp · Dhaka · Mango'), false);
+  assert.equal(isIdentityRoleName('Availability · Full-Time Ready'), false);
+  assert.equal(isIdentityRoleName('Skill · Python'), false);
 });

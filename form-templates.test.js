@@ -75,9 +75,11 @@ test('legacy AI arrays infer required semantic keys without duplicate guesses', 
 
 test('removing a core question blocks building until restorecore repairs it', () => {
   const template = defaultTemplate();
-  template.attendance.fields = template.attendance.fields.filter(field => field.key !== 'studentEmail');
-  assert.match(validateTemplate(template).errors.join('\n'), /missing bot-required questions \(studentEmail\)/);
-  const repaired = restoreCore(template, 'attendance');
+  template.enrollment.fields = template.enrollment.fields.filter(field =>
+    !['technologies', 'englishCommunication'].includes(field.key));
+  assert.match(validateTemplate(template).errors.join('\n'),
+    /missing bot-required questions \(englishCommunication, technologies\)/);
+  const repaired = restoreCore(template, 'enrollment');
   assert.deepEqual(validateTemplate(repaired).errors, []);
 });
 

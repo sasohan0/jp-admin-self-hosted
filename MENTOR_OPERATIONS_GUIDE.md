@@ -9,6 +9,7 @@ Run these in private `#bot-admin`, in order:
 ```text
 !syncmembers
 !repairpipelines
+!rolerepair #discussion
 !checkperms
 !doctor
 !forms
@@ -18,6 +19,13 @@ Run these in private `#bot-admin`, in order:
 ```
 
 `!syncmembers` includes current non-bot, non-supervisor server members even if they did not complete intake. `!repairpipelines` adds or repairs operational identity rows without deleting history. `!checkattendance` and `!checkjobsheets` are private diagnostics; they do not ping students. Fix every required `!doctor` failure before enabling public automation. Optional features such as Groq may remain off if they were intentionally not configured.
+
+Run `!rolerepair` before inviting students when possible. If members already
+exist, it assigns independent division, Dhaka-area, availability, work-mode,
+English, and multi-skill roles from saved intake answers. Members missing role
+data are mentioned in the selected channel with a private form, then only the
+remaining members are mentioned once more after two hours. No role object,
+channel, message, or Sheet row is deleted.
 
 ## Daily mentor routine
 
@@ -78,6 +86,20 @@ Set the operating values in private:
 
 Use `!target <metric> <amount>`, `!time <name> HH:MM`, `!schedule <feature> <days>`, and `!automation start|stop <key>` only after reviewing the current values. `weeklyreport` and `leaderboard` have separate switches and schedules. A manual command remains available even when its automatic switch is off. Before the first public run, use `!doctor schedules` and confirm the cohort timezone/work calendar.
 
+`!rtbr` additionally reconciles the visible **Right to Be Referred** role. Set
+the qualification count, rolling window, and weekly clock with:
+
+```text
+!rtbr top 10
+!rtbr days 7
+!rtbr time 20:00
+!schedule rtbr thu
+```
+
+The calculation requires verified current Discord identities before changing
+membership, so an incomplete identity cannot silently displace an existing
+qualifier.
+
 ## Leave request and approval
 
 Student flow:
@@ -107,6 +129,7 @@ For an adjusted range, use the date controls in the panel. Approved working date
 | Overall health | `!doctor` | `!doctor <check>` |
 | Channel permissions | `!checkperms` | `!repairpermissions` |
 | Current students | `!syncmembers` | `!audit`, `!profilecheck` |
+| Profile roles | `!doctor onboarding` | `!rolerepair [#channel]` |
 | Attendance | `!formstatus` | `!openform`, `!closeform`, `!checkattendance` |
 | Combined data readiness | `!checkpipelines YYYY-MM-DD` | `!repairpipelines` |
 | Jobs | `!checkjobsheets YYYY-MM-DD` | `!backfilljobsheets [N days]`, deliberate `!jobscheck` |
@@ -129,6 +152,7 @@ The complete categorized list is in `MENTOR_COMMAND_REFERENCE.md`. The live priv
 - Attendance mismatch: `!checkattendance` → `!repairattendance` → recheck.
 - Jobs mismatch: `!checkjobsheets <date>` → verify tracker `gid` and dates → recheck.
 - Missing students: enable **Server Members Intent**, then `!syncmembers`.
+- Missing or stale profile roles: move the bot role above managed roles, run `!doctor onboarding`, then `!rolerepair [#channel]`.
 - Channel issue: `!checkperms` → `!repairpermissions`; do not delete or recreate channels.
 - Backend issue: verify the existing Apps Script `/exec` deployment and matching secret, then `!doctor sheet` and `!doctor post`.
 - Duplicate-looking output: stop the automation switch, check the schedule/logs, and verify the module was not registered twice before restarting. Backfills and leave decisions have durable/idempotent guards, but public commands should still be run once.
