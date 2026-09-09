@@ -149,6 +149,27 @@ Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete the fou
 Finish with:
 
 ```text
+!automation starter
+!automation
+!doctor
+!checkperms
+```
+
+`!automation starter` is the safe opening-day preset. It keeps quiet essentials
+(attendance, job tracking, and content sync) enabled while holding noisy
+programmes. Dedicated outreach, interview-update, workshop, RTBR, discipline,
+and group-activity channels are hidden from ordinary students until their
+matching automation is started. Core channels such as rules, welcome,
+discussion, resources, resume updates, job hunting, and mentor channels remain
+available. Existing channels and data are never deleted.
+
+Students admitted through the web intake receive their location, availability,
+work-mode, English, and skill roles from that submission. The bot asks them only
+to accept the rules; it shows the private onboarding questionnaire only when
+required intake role data is genuinely missing. A delayed backend write is
+rechecked automatically before the fallback is offered.
+
+```text
 !checkperms
 !doctor
 !syncmembers

@@ -67,6 +67,14 @@ function applyScheduleCommand(scheduleValue, command, timezone) {
     else overrides[command.date] = command.state;
     schedule.overrides = overrides;
   }
+  if (command.action === 'override') {
+    const overrides = { ...schedule.overrides };
+    for (const date of command.dates) {
+      if (command.override === 'clear') delete overrides[date];
+      else overrides[date] = command.override;
+    }
+    schedule.overrides = overrides;
+  }
   return normalizeSchedule(schedule);
 }
 
@@ -112,6 +120,9 @@ function helpPayload() {
         '`!backend date 2026-08-15 on` — force one date on',
         '`!backend date 2026-08-15 off` — force one date off',
         '`!backend date 2026-08-15 clear` — remove that override',
+        '`!backend override 2026-09-09,2026-09-10 always` — stay online 24 hours on only those dates',
+        '`!backend override 2026-09-11 00:00-02:00` — use a special window on one date',
+        '`!backend override 2026-09-11 clear` — remove a special-date window',
       ].join('\n'),
       footer: { text: 'Use only in the protected control cohort’s private #bot-admin.' },
     }],

@@ -1,6 +1,6 @@
 # JP ADMIN — EJP Mentorship Bot Documentation
 
-**Version:** v3.32 (bot) / v56 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
+**Version:** v3.33 (bot) / v57 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
 **Stack:** Node.js (discord.js) on Render Free · Google Sheets + Apps Script (database, API, and scheduled wake-up) · Groq AI (llama-3.3-70b)
 
 ---
@@ -136,7 +136,7 @@ Attendance uses the freshly synchronized guild roster at both Apps Script and Di
 **Warnings and appeals:** `!warnings @student` · `!warnings reset @student` · `!warnings start YYYY-MM-DD` · `!warningreport` · `!appeals [all]` · `!appeal approve|decline <request-id> | note`. The start command gives every student one inclusive baseline, rebases recorded evidence, repairs only unfair warning-driven inactivity, and posts a correction. One run can add only one warning. Warning three means three distinct two-date incidents (six counted absence dates), marks the student inactive, stops all attendance/activity/RTBR/leaderboard credit until mentor reactivation, and posts an appeal button in the eliminated-students channel. The Thursday private warning report has a 30-minute recovery window and a durable duplicate guard. Dawn removal is scope-specific, is announced with an appeal in `#emergency`, and cannot be bypassed by reusing the normal Dawn join form; mentor approval restores the Dawn role and posts a student-facing decision notice. The select menus, buttons, and modals work in Discord mobile. Discord does not support a bot-defined pre-join popup, so inactive rejoiners receive a DM or channel fallback.
 **Questions:** `!questions` (clickable scheduler + channel picker) · `!questions channel #channel` · `!questions amounts <morning> <afternoon> <evening>` · `!dropquestion [cat] [workshop|discussion]` · `!genquestions <cat> <n>` · `!leaderboard` · `!weeklyreport` · `!rtbr` · `!replanquestions`
 **Targets:** `!targets` · `!target applications 10` · the same command supports `outreach`, `attendance`, `interviews`, `communication`, and `workshops`
-**Automation control:** `!control` · `!automation list|start|stop <key|all>` · `!times` · `!time jobs 22:30` · `!schedule jobs sun-thu` · `!calendar` (private date selector) · `!calendar week sun-thu | context` · `!calendar holiday|working YYYY-MM-DD | context` · advanced `!settings` / `!set <key> <value>`
+**Automation control:** `!control` · `!automation list|start|stop <key|all>` · `!automation starter` for a quiet new cohort · `!times` · `!time jobs 22:30` · `!schedule jobs sun-thu` · `!calendar` (private date selector) · `!calendar week sun-thu | context` · `!calendar holiday|working YYYY-MM-DD | context` · advanced `!settings` / `!set <key> <value>`
 **Workshop:** `!workshop` / `!specialworkshop` (private controls) · `!workshopannounce` (confirmation request) · `!workshoppoll`
 **Forwarder:** in `#bot-admin`, `!forwarder status|start|stop` · `!forwarder set <srcId> <dstId>` (live validation; route changes stay OFF until started; temporary failures show WAITING and retry without erasing ON intent)
 **Reusable content:** `!contentsync source <server-id|control>` · `!contentsync run resources|jobhunting one|all` · `!contentsync auto resources|jobhunting on|off`
@@ -215,7 +215,7 @@ and `!set rtbrtop`.
 
 **Rule of thumb: invite the bot with Administrator — all permission hassle disappears.**
 
-1. **Google:** create a Sheet → paste local backend v56 → CONFIG:
+1. **Google:** create a Sheet → paste local backend v57 → CONFIG:
    cohort name, blank FORM_ID if the bot creates Forms, new private SECRET_KEY
    → Deploy →
    **New deployment** → Web app → Execute as Me → **Anyone** → copy `/exec`
@@ -270,6 +270,9 @@ cohorts. `BOT_ACTIVE_WINDOW=04:50-23:30` is the startup fallback. Private
 windows, repeating weekdays or exact dates, and date overrides. The one
 `Render-Uptime-Monitor.gs` trigger reads that schedule and wakes the single
 Render URL ten minutes early.
+Use `!backend override YYYY-MM-DD[,YYYY-MM-DD] always` for temporary 24-hour
+dates, or replace `always` with one to four `HH:MM-HH:MM` windows. The normal
+schedule resumes automatically after those dates.
 Students should submit bot-tracked channel updates only inside that window. Old per-service or
 always-on monitors must remain paused.
 

@@ -38,9 +38,9 @@ const EXPECTED_ACTIONS = [
   'mailerstatus', 'sendCohortEmailBatch',
 ];
 
-test('Apps Script v56 source parses and exposes every bot API action', () => {
+test('Apps Script v57 source parses and exposes every bot API action', () => {
   assert.doesNotThrow(() => new Function(source));
-  assert.match(source, /const VERSION = 'v56'/);
+  assert.match(source, /const VERSION = 'v57'/);
   assert.match(source, /body\.action === 'saveDawnAttendance'/);
   assert.match(source, /body\.action === 'saveDawnMembershipEvent'/);
   assert.match(source, /body\.action === 'repairDawnAttendance'/);

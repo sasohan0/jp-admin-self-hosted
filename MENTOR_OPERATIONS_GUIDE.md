@@ -18,7 +18,7 @@ Run these in private `#bot-admin`, in order:
 !control
 ```
 
-`!syncmembers` includes current non-bot, non-supervisor server members even if they did not complete intake. `!repairpipelines` adds or repairs operational identity rows without deleting history. `!checkattendance` and `!checkjobsheets` are private diagnostics; they do not ping students. Fix every required `!doctor` failure before enabling public automation. Optional features such as Groq may remain off if they were intentionally not configured.
+`!syncmembers` includes current non-bot, non-supervisor server members even if they did not complete intake. `!repairpipelines` adds or repairs operational identity rows without deleting history. For a new cohort, run `!automation starter` once: quiet essentials stay enabled and noisy programme channels remain hidden until their matching automation starts. `!checkattendance` and `!checkjobsheets` are private diagnostics; they do not ping students. Fix every required `!doctor` failure before enabling public automation. Optional features such as Groq may remain off if they were intentionally not configured.
 
 Run `!rolerepair` before inviting students when possible. If members already
 exist, it assigns independent division, Dhaka-area, availability, work-mode,

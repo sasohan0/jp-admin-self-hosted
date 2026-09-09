@@ -138,10 +138,25 @@ Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete:
 Then run these private commands:
 
 ```text
+!automation starter
+!automation
 !checkperms
 !doctor
 !syncmembers
 ```
+
+The starter preset keeps attendance, job tracking, and content sync ready, but
+holds noisy student programmes until the mentor deliberately starts them. It
+also hides only their dedicated outreach, interview-update, workshop, RTBR,
+discipline, and group-activity channels from ordinary students. Core rules,
+welcome, discussion, resources, resume, job-hunting, and mentor channels remain
+visible. Starting a matching automation reveals its channel; stopping it hides
+that channel again. Nothing is deleted.
+
+A complete web-intake submission supplies the student's role profile, so the
+welcome flow asks only for rules acceptance. The private questionnaire is a
+fallback for missing required role fields, and the bot briefly rechecks slow
+backend writes before deciding it is needed.
 
 Diagnostics deliberately suppress mentions, so they do not ping students. Setup is complete when the required backend, permissions, roster, and schedules are healthy. Some optional `!doctor` items can remain disabled when you intentionally did not configure that feature, such as Groq.
 

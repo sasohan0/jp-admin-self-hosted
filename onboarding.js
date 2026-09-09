@@ -154,6 +154,33 @@ function isComplete(record) {
   return missingRoleProfileFields(record).length === 0 && Boolean(record.rulesAccepted);
 }
 
+function isRoleProfileComplete(record) {
+  return missingRoleProfileFields(record).length === 0;
+}
+
+async function waitForRoleProfile(cohort, userId, options = {}) {
+  const attempts = Math.max(1, Number(options.attempts) || 5);
+  const intervalMs = Math.max(0, Number(options.intervalMs) || 6000);
+  const loader = options.loader || loadRecord;
+  const wait = options.wait || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+  let record = {};
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      record = await loader(cohort, userId);
+      lastError = null;
+      if (isRoleProfileComplete(record)) return record;
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt + 1 < attempts) await wait(intervalMs);
+  }
+
+  if (lastError) throw lastError;
+  return record;
+}
+
 function needsAvailabilityReview(record) {
   return record.availability === 'full_time' && ['school', 'college', 'university_early'].includes(record.studyStage);
 }
@@ -386,11 +413,23 @@ function questionnaireContent(record) {
   return lines.join('\n');
 }
 
-function publicComponents(rulesUrl, cohort) {
-  return [new ActionRowBuilder().addComponents(
+function publicComponents(rulesUrl, cohort, record = null) {
+  const buttons = [
     new ButtonBuilder().setLabel('Read rules & regulations').setStyle(ButtonStyle.Link).setURL(rulesUrl),
-    new ButtonBuilder().setCustomId('onboard:start').setLabel('Complete private onboarding').setStyle(ButtonStyle.Success),
-  ), channelSurveyButton(cohort)];
+  ];
+  const profileComplete = record && isRoleProfileComplete(record);
+  if (profileComplete && !record.rulesAccepted) {
+    buttons.push(new ButtonBuilder().setCustomId('onboard:accept_rules_public')
+      .setLabel('I read and accept the rules').setStyle(ButtonStyle.Primary));
+  } else if (!profileComplete) {
+    buttons.push(new ButtonBuilder().setCustomId('onboard:start')
+      .setLabel('Complete missing role profile').setStyle(ButtonStyle.Success));
+  }
+  const rows = [new ActionRowBuilder().addComponents(...buttons)];
+  // The contact survey is fallback-only. An authenticated intake submission
+  // already saved the private profile and should not ask the student again.
+  if (!profileComplete) rows.push(channelSurveyButton(cohort));
+  return rows;
 }
 
 function onboardingOnlyComponents(rulesUrl) {
@@ -822,11 +861,18 @@ module.exports = function registerOnboarding(client) {
     const cohort = cohorts.find(c => c.guildId === member.guild.id);
     if (!cohort || member.user.bot || !cohort.channels.welcome || !cohort.channels.rules) return;
     try {
+      // OAuth admission fires guildMemberAdd just before the intake backend
+      // finishes saving its record. Recheck for up to 24 seconds so a temporary
+      // Apps Script lock cannot show successful intake users a redundant form.
       const rulesMessage = await ensureRulesMessage(client, cohort);
+      const record = await waitForRoleProfile(cohort, member.id);
+      const profileComplete = isRoleProfileComplete(record);
       const channel = await client.channels.fetch(cohort.channels.welcome);
       await channel.send({
-        content: `👋 Welcome ${member}! Please read the rules, complete your private contact profile, and finish your role profile. Contact details remain private; only the selected role categories appear on Discord.`,
-        components: publicComponents(rulesMessage.url, cohort),
+        content: profileComplete
+          ? `👋 Welcome ${member}! Your intake profile and roles are ready. Please read and accept the rules; no second private profile is required.`
+          : `👋 Welcome ${member}! Please read the rules. Some intake role data is missing, so the private fallback button is available below. Contact details remain private.`,
+        components: publicComponents(rulesMessage.url, cohort, record),
         allowedMentions: { users: [member.id] },
       });
     } catch (err) { console.error('[onboarding] welcome failed:', err.message); }
@@ -845,6 +891,26 @@ module.exports = function registerOnboarding(client) {
         await interaction.editReply({ content: questionnaireContent(record), components: questionnaireRows(record, url) });
       } catch (err) {
         await interaction.editReply(`❌ Could not start onboarding: ${err.message}`);
+      }
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'onboard:accept_rules_public') {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      try {
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        const record = await loadRecord(cohort, interaction.user.id);
+        if (!isRoleProfileComplete(record)) {
+          await interaction.editReply('Your intake role data is still incomplete. Use **Complete missing role profile** instead.');
+          return;
+        }
+        record.rulesAccepted = true;
+        record.completedAt = record.completedAt || new Date().toISOString();
+        await saveRecord(cohort, record);
+        await reconcileProfileRoles(cohort, member, record);
+        await interaction.editReply('✅ Rules accepted. Your intake profile and Discord roles are complete.');
+      } catch (error) {
+        await interaction.editReply(`❌ Could not save rules acceptance: ${error.message}`);
       }
       return;
     }
@@ -962,6 +1028,8 @@ module.exports.ensureRulesMessage = ensureRulesMessage;
 module.exports.publicComponents = publicComponents;
 module.exports.onboardingOnlyComponents = onboardingOnlyComponents;
 module.exports.onboardingRoleNeeds = onboardingRoleNeeds;
+module.exports.isRoleProfileComplete = isRoleProfileComplete;
+module.exports.waitForRoleProfile = waitForRoleProfile;
 module.exports.repairOnboardingRoles = repairOnboardingRoles;
 module.exports.sendOnboardingReminder = sendOnboardingReminder;
 module.exports.applyProfileRoles = applyProfileRoles;

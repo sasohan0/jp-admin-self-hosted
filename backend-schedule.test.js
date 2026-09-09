@@ -39,4 +39,24 @@ test('backend commands parse schedule edits', () => {
     ['2026-08-20', '2026-08-22']);
   assert.deepEqual(parseBackendCommand('!backend date 2026-08-21 off'),
     { action: 'date', date: '2026-08-21', state: 'off' });
+  assert.deepEqual(parseBackendCommand('!backend override 2026-09-09,2026-09-10 always'), {
+    action: 'override', dates: ['2026-09-09', '2026-09-10'], override: 'always',
+  });
+  assert.deepEqual(parseBackendCommand('!backend override 2026-09-11 00:00-02:00'), {
+    action: 'override', dates: ['2026-09-11'], override: { windows: [{ start: '00:00', end: '02:00' }] },
+  });
+});
+
+test('date overrides can run all day or use their own windows without changing the regular schedule', () => {
+  const schedule = normalizeSchedule({
+    timezone: 'Asia/Dhaka', windows: [{ start: '04:50', end: '23:30' }],
+    days: [0, 1, 2, 3, 4, 5, 6], overrides: {
+      '2026-09-09': 'always',
+      '2026-09-10': { windows: [{ start: '00:00', end: '02:00' }] },
+    },
+  });
+  assert.equal(isScheduleActive(schedule, new Date('2026-09-08T18:30:00Z')), true); // Sep 9 00:30
+  assert.equal(isScheduleActive(schedule, new Date('2026-09-09T17:30:00Z')), true); // Sep 9 23:30, all day
+  assert.equal(isScheduleActive(schedule, new Date('2026-09-09T19:00:00Z')), true); // Sep 10 01:00
+  assert.equal(isScheduleActive(schedule, new Date('2026-09-09T21:00:00Z')), false); // Sep 10 03:00
 });

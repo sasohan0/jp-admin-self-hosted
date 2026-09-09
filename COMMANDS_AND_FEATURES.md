@@ -25,6 +25,7 @@ events. Unless a row explicitly says otherwise, commands are supervisor-only.
 | `!backend windows <HH:MM-HH:MM[,HH:MM-HH:MM...]>` | `backend-control.js` | Saves one to four daily Render/Discord active windows, immediately reconciles the current connection, and ensures exactly one five-minute Apps Script monitor trigger. |
 | `!backend days everyday\|weekdays\|mon,wed,...` | `backend-control.js` | Chooses repeating active weekdays and exits exact-date mode. `weekdays` means Sunday through Thursday. |
 | `!backend dates <YYYY-MM-DD,...>\|clear` / `!backend date <YYYY-MM-DD> on\|off\|clear` | `backend-control.js` | Runs only on listed dates, returns to recurring days, or applies/removes one date-specific override. |
+| `!backend override <YYYY-MM-DD[,YYYY-MM-DD...]> always\|HH:MM-HH:MM[,..]\|off\|clear` | `backend-control.js` | Applies a self-expiring full-day or custom-window exception to only those dates. The regular schedule resumes automatically afterward. |
 | `!supervisor [list]` / `!supervisor add @user-or-ID` / `!supervisor remove @user-or-ID` | `cohort-manager.js` | Private, server-local supervisor management in that cohort’s `#bot-admin`. Add accepts a current member or preconfigures an absent person's raw Discord ID, saves the durable registry, repairs private/locked permissions when present, and excludes the ID from student tracking. Remove revokes standard overwrites and resyncs a remaining guild member as a normal Discord student; self-removal is blocked. |
 | `!groqstatus` | `groqstatus.js` | Supervisor | Shows configured Groq keys and observed quota. |
 
@@ -45,8 +46,10 @@ These commands must be run in the configured supervisor channel.
 | `!setrulesmessage <Discord message link>` | `onboarding.js` | Selects an existing message in this server's configured rules channel and refreshes the panel link. |
 | `!resetonboarding @member` | `onboarding.js` | Deletes one stored response record and removes bot-managed identity/readiness roles. |
 
-Member-facing onboarding is not a prefix command. A join greeting or persistent
-panel opens a paged ephemeral role-profile questionnaire plus explicit rules acceptance.
+Member-facing onboarding is not a prefix command. A complete authenticated
+intake assigns the roles and skips the fallback questionnaire; the delayed join
+greeting asks only for explicit rules acceptance. Missing intake role fields
+still open the private paged fallback questionnaire.
 New non-bot, non-supervisor members also receive the five-field private contact
 form in DM. The welcome panel contains **Complete my private profile** as a
 fallback. Submitting it creates or repairs `All Data`, `Bot_Map`, `Roster Review`,
@@ -185,7 +188,7 @@ absence command counts recorded session columns rather than calendar days.
 | Message in configured `#outreach-update` / `#outreach-updates` | `outreach.js` | Logs the roster member's outreach activity; the `channel_outreach` runtime override wins for both live logging and history backfill. |
 | `!backfilloutreach [N days]` | `outreach.js` | Reconciles the latest three cohort calendar days by default; 1-30 days select an explicit inclusive window. Pagination stops at the first older date. Each in-window Discord message ID is idempotent; older events are neither scanned nor overwritten. |
 | `!outreachcheck` | `outreach.js` | Runs the stale/never-outreached report immediately. |
-| Successful outreach/job/interview write | Apps Script v56 | Keeps all three activity matrices synchronized with their durable logs. Bot writes are serialized per cohort and long idempotent activity/roster writes use a three-minute timeout. Outreach retries and interview history backfills repair downstream views by immutable message identity. Active job/outreach rows below 10 total over the latest three recorded dates turn light red; inactive rows in all matrices are dark red until mentor activation. |
+| Successful outreach/job/interview write | Apps Script v57 | Keeps all three activity matrices synchronized with their durable logs. Bot writes are serialized per cohort and long idempotent activity/roster writes use a three-minute timeout. Outreach retries and interview history backfills repair downstream views by immutable message identity. Active job/outreach rows below 10 total over the latest three recorded dates turn light red; inactive rows in all matrices are dark red until mentor activation. |
 
 | Tracker link in `#job-tracking-sheet` | `jobs.js` | Stores the member's latest Sheet ID and selected tab `gid`. A link without `gid` is explicitly acknowledged as using the default/first visible tab and appears as `DEFAULT` in `Job_Sheets`. If the immediate backend write exhausts transient retries, the durable Discord message is reconciled automatically from recent history before the next job check; the student is not asked to repost. |
 | `!backfilljobsheets [N days]` | `jobs.js` | Scans the latest three cohort calendar days by default, or an explicit 1-30-day window, and saves the newest in-window tracker link per student. Pagination stops at the first older date; existing daily job history is untouched. |
@@ -241,6 +244,7 @@ absence command counts recorded session columns rather than calendar days.
 | `!control` / `!automationconfig` | `control-center.js` | Private one-place snapshot of this cohort's switches, targets, clock times, scheduled days, and exact control/student/cohort command shortcuts. Its Command Center button opens the searchable catalog without duplicating command definitions. |
 | `!automation [list]` | `automations.js` | Shows persistent automation switches. |
 | `!automation start|stop <key|all>` | `automations.js` | Changes switches and invalidates the local cache immediately. Background refresh is deliberately less frequent to protect Apps Script quota. |
+| `!automation starter` | `automations.js` / `channel-visibility.js` | Applies the quiet new-cohort preset and hides only held outreach, interview, communication, RTBR, and Dawn workflow channels from students. Core channels stay visible; starting a related automation reveals its channel again. |
 | `!settings` | `settings.js` | Lists default/current settings. |
 | `!set <key> <value>` | `settings.js` | Persists one valid target, time, URL, slot, or channel override. |
 | `!targets` | `settings.js` | Shows the six cohort performance goals and whether each is daily or weekly. |

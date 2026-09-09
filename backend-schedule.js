@@ -7,7 +7,7 @@ const DAY_MAP = {
 };
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DEFAULT_SCHEDULE = Object.freeze({
-  version: 1,
+  version: 2,
   timezone: 'Asia/Dhaka',
   windows: Object.freeze([{ start: '04:50', end: '23:30' }]),
   days: Object.freeze([0, 1, 2, 3, 4, 5, 6]),
@@ -73,10 +73,14 @@ function normalizeSchedule(value = {}) {
   const overrides = {};
   if (value.overrides && !Array.isArray(value.overrides) && typeof value.overrides === 'object') {
     for (const [date, state] of Object.entries(value.overrides)) {
-      if (validDate(date) && ['on', 'off'].includes(state)) overrides[date] = state;
+      if (!validDate(date)) continue;
+      if (['on', 'off', 'always'].includes(state)) overrides[date] = state;
+      else if (state && typeof state === 'object' && !Array.isArray(state) && Array.isArray(state.windows)) {
+        overrides[date] = { windows: parseWindows(state.windows.map(item => `${item.start}-${item.end}`).join(',')) };
+      }
     }
   }
-  return { version: 1, timezone, windows, days, dates, overrides, wakeLeadMinutes: 10 };
+  return { version: 2, timezone, windows, days, dates, overrides, wakeLeadMinutes: 10 };
 }
 
 function scheduleFromWindow(window, timezone = 'Asia/Dhaka') {
@@ -107,6 +111,11 @@ function isScheduleActive(scheduleValue, now = new Date(), options = {}) {
   const shifted = new Date(now.getTime() + Number(options.leadMinutes || 0) * 60000);
   const local = zonedParts(shifted, schedule.timezone);
   const override = schedule.overrides[local.date];
+  if (override === 'off') return false;
+  if (override === 'always') return true;
+  if (override && typeof override === 'object') {
+    return override.windows.some(window => minuteInWindow(local.minutes, window));
+  }
   const dateAllowed = override === 'on' || (override !== 'off' && (
     schedule.dates.length ? schedule.dates.includes(local.date) : schedule.days.includes(local.day)
   ));
@@ -128,6 +137,18 @@ function parseBackendCommand(value) {
     if (!validDate(match[1])) throw new Error('Use a real YYYY-MM-DD date');
     return { action: 'date', date: match[1], state: match[2].toLowerCase() };
   }
+  match = text.match(/^!backend\s+override\s+([^\s]+)\s+(.+)$/i);
+  if (match) {
+    const dates = [...new Set(match[1].split(',').map(item => item.trim()).filter(Boolean))];
+    if (!dates.length || dates.some(date => !validDate(date))) {
+      throw new Error('Override dates must use `YYYY-MM-DD`, separated by commas');
+    }
+    const rawOverride = match[2].trim().toLowerCase();
+    let override;
+    if (['always', 'off', 'clear'].includes(rawOverride)) override = rawOverride;
+    else override = { windows: parseWindows(match[2]) };
+    return { action: 'override', dates: dates.slice(0, 30).sort(), override };
+  }
   match = text.match(/^!backend\s+dates\s+(.+)$/i);
   if (match) {
     if (match[1].trim().toLowerCase() === 'clear') return { action: 'dates', dates: [] };
@@ -145,7 +166,12 @@ function formatSchedule(scheduleValue) {
     days: schedule.dates.length ? 'Exact dates only' : schedule.days.map(day => DAY_NAMES[day]).join(', '),
     dates: schedule.dates.join(', ') || '—',
     overrides: Object.entries(schedule.overrides).sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, state]) => `${date} ${state}`).join(', ') || '—',
+      .map(([date, state]) => {
+        if (state && typeof state === 'object') {
+          return `${date} ${state.windows.map(item => `${item.start}-${item.end}`).join(',')}`;
+        }
+        return `${date} ${state}`;
+      }).join(', ') || '—',
   };
 }
 

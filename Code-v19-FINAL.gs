@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v56 - independent intake role profiles)
+//  JP ADMIN SHEET + BOT API (v57 - dated backend uptime overrides)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v56';
+const VERSION = 'v57';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -6622,7 +6622,7 @@ function getDawnAbsenceReport(start, end, guildId) {
 // ============================================================
 function defaultRenderUptimeSchedule_() {
   return {
-    version: 1,
+    version: 2,
     timezone: CONFIG.TZ || 'Asia/Dhaka',
     windows: [{ start: '04:50', end: '23:30' }],
     days: [0, 1, 2, 3, 4, 5, 6],
@@ -6669,12 +6669,28 @@ function normalizeRenderUptimeSchedule_(value) {
   const overrides = {};
   if (source.overrides && typeof source.overrides === 'object' && !Array.isArray(source.overrides)) {
     Object.keys(source.overrides).sort().slice(-180).forEach(function (date) {
-      const state = String(source.overrides[date]);
-      if (validUptimeDate_(date) && (state === 'on' || state === 'off')) overrides[date] = state;
+      if (!validUptimeDate_(date)) return;
+      const value = source.overrides[date];
+      const state = String(value);
+      if (state === 'on' || state === 'off' || state === 'always') {
+        overrides[date] = state;
+        return;
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value) && Array.isArray(value.windows)) {
+        const specialWindows = value.windows.slice(0, 4).map(function (item) {
+          const start = String(item && item.start || '');
+          const end = String(item && item.end || '');
+          if (!validUptimeClock_(start) || !validUptimeClock_(end) || start === end) {
+            throw new Error('Backend override windows require different HH:MM start/end values');
+          }
+          return { start: start, end: end };
+        });
+        if (specialWindows.length) overrides[date] = { windows: specialWindows };
+      }
     });
   }
   return {
-    version: 1,
+    version: 2,
     timezone: String(source.timezone || fallback.timezone).slice(0, 80),
     windows: windows,
     days: days,

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const source = fs.readFileSync(require.resolve('./onboarding'), 'utf8');
-const { onboardingRoleNeeds } = require('./onboarding');
+const { isRoleProfileComplete, onboardingRoleNeeds, waitForRoleProfile } = require('./onboarding');
 
 test('combined completion reminder targets only the incomplete union', () => {
   assert.match(source, /!completioncheck/);
@@ -13,6 +13,36 @@ test('combined completion reminder targets only the incomplete union', () => {
   assert.match(source, /needsOnboarding \|\| item\.needsProfile/);
   assert.match(source, /allowedMentions: \{ users: ids \}/);
   assert.match(source, /components: publicComponents\(rulesMessage\.url, cohort\)/);
+});
+
+test('complete intake role data skips the fallback questionnaire before rules acceptance', () => {
+  const intakeRecord = {
+    division: 'Sylhet', availability: 'limited', jobFocus: 'hybrid',
+    englishLevel: 'advanced', skills: ['Laravel'], rulesAccepted: false,
+  };
+  assert.equal(isRoleProfileComplete(intakeRecord), true);
+  assert.match(source, /accept_rules_public/);
+  assert.match(source, /no second private profile is required/);
+});
+
+test('join onboarding waits through a slow intake write before choosing fallback', async () => {
+  let reads = 0;
+  let waits = 0;
+  const record = await waitForRoleProfile({}, '123', {
+    intervalMs: 1,
+    wait: async () => { waits += 1; },
+    loader: async () => {
+      reads += 1;
+      if (reads < 3) return {};
+      return {
+        division: 'Dhaka', subregion: 'Mirpur', availability: 'full_time',
+        jobFocus: 'remote', englishLevel: 'advanced', skills: ['React'],
+      };
+    },
+  });
+  assert.equal(reads, 3);
+  assert.equal(waits, 2);
+  assert.equal(isRoleProfileComplete(record), true);
 });
 
 test('targeted onboarding reminder and role repair stay separate from profile reminders', () => {

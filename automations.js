@@ -8,6 +8,7 @@
 // ============================================================
 const { cohorts } = require('./config');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
+const { syncAutomationChannelVisibility } = require('./channel-visibility');
 
 // Commands update this process immediately. A longer refresh interval prevents
 // minute-based schedulers from generating hundreds of unnecessary Sheet calls.
@@ -50,6 +51,11 @@ const PARENTS = {
   interviewfollowup: 'escalations',
 };
 
+// A newly opened cohort needs identity/roster syncing (always-on handlers),
+// attendance, job tracking and durable content reconciliation. Noisy student
+// programmes remain held until a mentor intentionally starts them.
+const STARTER_ON = Object.freeze(['attendance', 'jobs', 'contentsync']);
+
 const cache = {}; // guildId -> { at, states }
 
 function isAutomationCommand(content) {
@@ -89,6 +95,34 @@ async function setOn(cohort, key, on) {
   cache[cohort.guildId] = null;
 }
 
+function defaultOn(key) {
+  return !['dmnudges', 'suggestions', 'specialworkshop', 'mailer'].includes(key);
+}
+
+async function resolvedStates(cohort) {
+  const raw = await fetchStates(cohort);
+  const states = {};
+  for (const key of Object.keys(KEYS)) {
+    let on = raw[key] === undefined ? defaultOn(key) : raw[key] === '1';
+    if (PARENTS[key]) {
+      const parent = PARENTS[key];
+      const parentOn = raw[parent] === undefined ? defaultOn(parent) : raw[parent] === '1';
+      on = on && parentOn;
+    }
+    states[key] = on;
+  }
+  return states;
+}
+
+async function applyStarterPreset(cohort) {
+  const failures = [];
+  for (const key of Object.keys(KEYS)) {
+    try { await setOn(cohort, key, STARTER_ON.includes(key)); }
+    catch (error) { failures.push(`${key}: ${error.message}`); }
+  }
+  return { states: await resolvedStates(cohort), failures };
+}
+
 function registerAutomations(client) {
   client.on('messageCreate', async (msg) => {
     if (msg.author.bot) return;
@@ -112,6 +146,34 @@ function registerAutomations(client) {
       });
     }
 
+
+    if (action === 'starter') {
+      await msg.reply({
+        content: '🧰 Applying the safe new-cohort preset and student channel visibility...',
+        allowedMentions: { parse: [] },
+      });
+      try {
+        const preset = await applyStarterPreset(cohort);
+        const visibility = await syncAutomationChannelVisibility(client, cohort, preset.states);
+        const held = Object.keys(KEYS).filter(key => !preset.states[key]);
+        await msg.channel.send({
+          content: [
+            `✅ Starter preset ready. Active: **${STARTER_ON.join(', ')}**.`,
+            `Held: **${held.join(', ')}**.`,
+            `Student workflow channels updated: **${visibility.updated.length}**; missing: **${visibility.missing.length}**; failed: **${visibility.failed.length}**.`,
+            `Switch write failures: **${preset.failures.length}**.`,
+            'Core channels were not hidden. Manual commands and event-safe roster/intake syncing remain available.',
+            ...(visibility.failed.length ? [`⚠️ ${visibility.failed.join('; ').slice(0, 500)}`] : []),
+            ...(preset.failures.length ? [`⚠️ ${preset.failures.join('; ').slice(0, 500)}`] : []),
+          ].join('\n'),
+          allowedMentions: { parse: [] },
+        });
+      } catch (error) {
+        await msg.reply({ content: `❌ Starter preset failed safely: ${error.message}`, allowedMentions: { parse: [] } });
+      }
+      return;
+    }
+
     if (!['stop', 'start'].includes(action)) return msg.reply('Usage: `!automation [list|start|stop] <key|all>`');
     const on = action === 'start';
     const targets = target === 'all' ? Object.keys(KEYS) : [target];
@@ -119,8 +181,22 @@ function registerAutomations(client) {
       return msg.reply(`❓ Unknown key. Valid: ${Object.keys(KEYS).map(k => `\`${k}\``).join(', ')}, \`all\``);
     }
     for (const t of targets) await setOn(cohort, t, on);
-    await msg.reply(`${on ? '🟢 Started' : '🔴 Stopped'}: **${targets.join(', ')}** — live immediately.`);
+    const visibility = await syncAutomationChannelVisibility(client, cohort, await resolvedStates(cohort));
+    await msg.reply({
+      content: `${on ? '🟢 Started' : '🔴 Stopped'}: **${targets.join(', ')}** — live immediately. Student workflow channels updated: **${visibility.updated.length}**${visibility.failed.length ? `; ⚠️ ${visibility.failed.length} failed` : ''}.`,
+      allowedMentions: { parse: [] },
+    });
   });
 }
 
-module.exports = { registerAutomations, isAutomationCommand, isOn, setOn, KEYS, PARENTS };
+module.exports = {
+  STARTER_ON,
+  registerAutomations,
+  isAutomationCommand,
+  isOn,
+  setOn,
+  applyStarterPreset,
+  resolvedStates,
+  KEYS,
+  PARENTS,
+};

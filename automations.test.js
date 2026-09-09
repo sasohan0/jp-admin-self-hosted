@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isAutomationCommand, KEYS, PARENTS } = require('./automations');
+const { isAutomationCommand, KEYS, PARENTS, STARTER_ON } = require('./automations');
 
 test('automation switch command does not collide with the control-center alias', () => {
   assert.equal(isAutomationCommand('!automation'), true);
@@ -20,4 +20,11 @@ test('activity prompts and escalations have individually controllable child swit
 
 test('Dawn special workshops have an independent opt-in switch', () => {
   assert.match(KEYS.specialworkshop, /Dawn Focus/);
+});
+
+test('new cohort starter preset keeps only quiet essential automations active', () => {
+  assert.deepEqual(STARTER_ON, ['attendance', 'jobs', 'contentsync']);
+  for (const key of ['outreach', 'questions', 'workshop', 'rtbr', 'discipline', 'activityprompts']) {
+    assert.equal(STARTER_ON.includes(key), false);
+  }
 });

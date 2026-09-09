@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { appsScriptPost } = require('./apps-script-api');
 const { loadTemplatePair } = require('./cohort-admin');
 const { portalFieldsFromTemplate, validateIntakeSubmission } = require('./intake-schema');
+const { missingRoleProfileFields } = require('./role-profile');
 const {
   portalBaseUrl,
   portalConfigProblems,
@@ -457,9 +458,10 @@ function createIntakePortalHandler(dependencies = {}) {
           detail: roleSyncWarning,
         }).catch(() => null);
         sessions.delete(sessionId);
+        const roleProfileComplete = missingRoleProfileFields(result.onboarding).length === 0;
         const supervisorNote = supervisorTest
           ? '<p>This supervisor test was stored without creating an active student tracking profile.</p>'
-          : `<p>You can now open Discord and continue with the server rules and onboarding.</p>${roleSyncWarning ? '<p>Your answers were saved. The bot will safely retry role assignment; a mentor can also run role repair.</p>' : ''}`;
+          : `<p>You can now open Discord and read the server rules.${roleProfileComplete ? ' Your complete intake answers replace the fallback role questionnaire.' : ' The private fallback will ask only for role information that is still missing.'}</p>${roleSyncWarning ? '<p>Your answers were saved. The bot will safely retry role assignment; a mentor can also run role repair.</p>' : ''}`;
         sendHtml(res, 200, page('Enrollment complete', `<section class="card"><div class="success"><h1>Enrollment complete</h1><p>Your data was saved and your Discord account is linked to <strong>${escapeHtml(cohort.name)}</strong>.</p></div>${supervisorNote}<p><a class="button" href="https://discord.com/channels/${escapeHtml(cohort.guildId)}">Open Discord server</a></p></section>`), {
           'Set-Cookie': sessionCookie('', 0),
         });

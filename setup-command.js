@@ -15,6 +15,8 @@ const { setSetupDate } = require('./state');
 const { report } = require('./reporter');
 const { ensureOnboardingSetup } = require('./onboarding');
 const { normalizeChannelName: norm } = require('./channel-names');
+const { applyStarterPreset } = require('./automations');
+const { syncAutomationChannelVisibility } = require('./channel-visibility');
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // name -> { key, privacy }
@@ -324,6 +326,17 @@ module.exports = function registerSetup(client) {
       const permissionWarnings = new Set(ensured.permissionWarnings);
       const today = new Date().toLocaleDateString('en-CA', { timeZone: cohort.timezone });
       await setSetupDate(cohort, today);       // start the 3-day warm-up
+      let starter = 'Not applied';
+      try {
+        const preset = await applyStarterPreset(cohort);
+        const visibility = await syncAutomationChannelVisibility(client, cohort, preset.states);
+        starter = `attendance, jobs, contentsync active; ${visibility.updated.length} workflow channel(s) synchronized`;
+        if (preset.failures.length) failed.push(...preset.failures.map(item => `starter switch: ${item}`));
+        if (visibility.failed.length) failed.push(...visibility.failed.map(item => `visibility: ${item}`));
+      } catch (err) {
+        starter = `⚠️ ${err.message}`;
+        failed.push('starter preset: ' + err.message);
+      }
       const announced = await runAnnounceAll(client, cohort); // intro posts + pins
       let onboarding = 'Not configured';
       try {
@@ -342,8 +355,9 @@ module.exports = function registerSetup(client) {
             { name: `📁 Channels created (${created.length})`, value: created.length ? created.map(c => `• #${c}`).join('\n') : '— all existed already' },
             { name: `♻️ Template channels reused (${reused.length})`, value: reused.length ? reused.join('\n').slice(0, 1024) : '— none' },
             { name: `📣 Announcements posted`, value: String(announced) },
+            { name: '🧰 Starter automation preset', value: starter },
             { name: '👋 Welcome onboarding', value: onboarding },
-            { name: '⏳ Warm-up', value: 'Question drops, workshop polls, and job checks start automatically in **3 days**. Attendance, outreach, hired, and interview replies are active NOW.' },
+            { name: '⏳ Warm-up', value: 'Attendance, job tracking, roster/intake syncing, and manual supervisor commands are ready. Noisy student programmes stay held until a mentor starts them.' },
             ...(permissionWarnings.size ? [{ name: 'ℹ️ Permission notices', value: [...permissionWarnings].join('\n').slice(0, 1024) }] : []),
             ...(failed.length ? [{ name: '⚠️ Failed', value: failed.join('\n').slice(0, 1024) }] : []),
           ],

@@ -140,6 +140,7 @@ const SECTIONS = [
   ['🎛 Control (annoyance prevention)', [
     ['!control', 'One private overview of switches, targets, times, schedules, students, and cohort controls'],
     ['!automation [list|start|stop] <key|all>', 'Master on/off - works instantly, even mid-day'],
+    ['!automation starter', 'Safe new-cohort preset: keep attendance/jobs/sync active; hold noisy programmes and hide only their workflow channels'],
     ['!targets / !target <metric> <amount>', 'View/change goals: applications, outreach, attendance, interviews, communication, workshops'],
     ['!times / !time <name> HH:MM', 'View/change automation clock times in this cohort timezone'],
     ['!settings / !set <key> <value>', 'Advanced settings: times, quantities, question hours, slots...'],
@@ -159,7 +160,7 @@ const SECTIONS = [
   ['🆕 New cohort', [
     ['/setup or !setup', 'Open guided setup; self-hosted owner recovery is automatic'],
     ['!cohorts', 'Private add/update/retire panel for the managed one-bot deployment'],
-    ['!backend / !backend help', 'View or edit the unified Render/Discord active windows, recurring days, exact dates, and date overrides'],
+    ['!backend / !backend help', 'View/edit uptime; dated `override ... always|HH:MM-HH:MM` keeps special dates online without changing the regular schedule'],
     ['!supervisor list|add @user|remove @user', 'Manage this server’s supervisors, private permissions, and roster exclusion'],
     ['!intake status|enable [slug]|disable|link', 'Control the secure pre-entry Discord OAuth portal and share its cohort-specific link'],
     ['!setupcohortsheet [Sheet URL]', 'One-command required Sheet/tab/trigger setup'],

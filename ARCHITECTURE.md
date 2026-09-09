@@ -211,7 +211,7 @@ checked during changes.
 `roster.js` loads `Bot_Map` plus manual exclusions through one `action=roster`
 execution and caches them for ten minutes. Discord membership is the active
 roster source of truth. `!syncmembers` submits only current non-bot,
-non-supervisor members to Apps Script v56, which corroborates current or
+non-supervisor members to Apps Script v57, which corroborates current or
 archived Discord IDs, unique normalized names, `All Data`, and enrollment
 identity fields before rebuilding `Bot_Map`. `All Data` is the preferred
 contact/location source and `Bot_Map Archive` fills missing historical region
@@ -287,7 +287,7 @@ submission controls mood/interview summaries, and an explicit no-interview
 confirmation vetoes a contradictory Yes. The shared form trigger continues to
 process enrollment submissions.
 
-Apps Script v56 also exposes a private date-bounded absence report and
+Apps Script v57 also exposes a private date-bounded absence report and
 attendance roster/response audit. The Node
 side parses `current`, `previous`, a date, or month-week phrases such as
 `july week 1`, then renders contact-rich TSV only inside `#bot-admin`. After
@@ -298,7 +298,7 @@ three-or-more recorded-session absence runs from the current or previous week;
 Form definitions originate in `form-templates.js`. `cohort-admin.js` stores the
 working enrollment and attendance definitions separately in guild-namespaced
 Apps Script state and can copy them into named reusable pairs. Creation sends a
-validated definition to Apps Script v56, which supports text, paragraph,
+validated definition to Apps Script v57, which supports text, paragraph,
 choice, checkbox, scale, date, and time fields. Semantic field keys are saved
 with the created Forms so edited student-facing wording does not break roster
 or attendance header lookup.
@@ -531,8 +531,10 @@ role or `@everyone` cannot accidentally notify STRIDE members.
 
 ### Onboarding flow
 
-`onboarding.js` posts a public welcome and rules link but collects role-profile
-answers through ephemeral selects. Apps Script state persists division,
+`onboarding.js` delays the per-member greeting so an OAuth intake write can
+finish first. A complete intake skips the fallback role questionnaire and asks
+only for rules acceptance; incomplete records keep the private fallback.
+Apps Script state persists division,
 conditional Dhaka area, availability, work mode, English level, multiple honest
 skills, rules acceptance, and any private placement answers supplied by intake.
 Bulk member lists use the shared rate-limit-aware `discord-members.js` cache;
@@ -560,7 +562,10 @@ grant membership to a role. Availability and skill roles are never used for thes
 aliases. It reuses recognized template text channels, repairs private/locked
 permissions, and creates only missing standard channels. It runs discovery,
 records the three-day warm-up, posts channel introductions, and establishes the
-rules message and persistent onboarding panel.
+rules message and persistent onboarding panel. `automations.js` applies the
+explicit starter preset during setup; `channel-visibility.js` changes only
+`ViewChannel` on dedicated held workflow channels and preserves core,
+supervisor, and bot access.
 
 ## Persistence model
 
