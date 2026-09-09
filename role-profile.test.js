@@ -8,6 +8,7 @@ const {
   isManagedProfileRoleName,
   missingRoleProfileFields,
   normalizeSkills,
+  profileFromRoleNames,
   roleProfile,
 } = require('./role-profile');
 
@@ -22,6 +23,17 @@ test('role profile makes Dhaka area conditional and normalizes intake vocabulary
     skills: ['Laravel', 'Python', 'React Native'],
   });
   assert.equal(roleProfile({ region: 'Sylhet', subregion: 'Beanibazar' }).subregion, '');
+});
+
+test('complete managed Discord roles can recover a missing intake state record', () => {
+  assert.deepEqual(profileFromRoleNames([
+    '@everyone', 'Active Student', 'Division · Dhaka', 'Dhaka Area · Savar',
+    'Availability · Full-Time Ready', 'Work Mode · Onsite', 'English · Basic',
+    'Skill · JavaScript', 'Skill · PostgreSQL',
+  ]), {
+    division: 'Dhaka', subregion: 'Savar', availability: 'full_time',
+    jobFocus: 'onsite', englishLevel: 'basic', skills: ['JavaScript', 'PostgreSQL'],
+  });
 });
 
 test('role names are independent categories and never fruit teams', () => {

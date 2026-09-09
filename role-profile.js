@@ -161,6 +161,24 @@ function expectedRoleNames(input = {}) {
   return roles;
 }
 
+function profileFromRoleNames(roleNames = []) {
+  const names = [...new Set(roleNames.map(clean).filter(Boolean))];
+  const divisionName = names.find(name => name.startsWith(DIVISION_PREFIX)) || '';
+  const subregionName = names.find(name => name.startsWith(SUBREGION_PREFIX)) || '';
+  const reverse = values => Object.entries(values)
+    .find(([, roleName]) => names.includes(roleName))?.[0] || '';
+  return {
+    division: canonicalFromList(divisionName.slice(DIVISION_PREFIX.length), DIVISIONS),
+    subregion: canonicalFromList(subregionName.slice(SUBREGION_PREFIX.length), DHAKA_SUBREGIONS),
+    availability: reverse(READINESS_ROLES),
+    jobFocus: reverse(WORK_MODE_ROLES),
+    englishLevel: reverse(ENGLISH_ROLES),
+    skills: normalizeSkills(names
+      .filter(name => name.startsWith(SKILL_PREFIX))
+      .map(name => name.slice(SKILL_PREFIX.length))),
+  };
+}
+
 function isManagedProfileRoleName(name) {
   const value = String(name || '');
   return value.startsWith(DIVISION_PREFIX) || value.startsWith(SUBREGION_PREFIX) ||
@@ -188,5 +206,6 @@ module.exports = {
   normalizeSkills,
   normalizeSubregion,
   normalizeWorkMode,
+  profileFromRoleNames,
   roleProfile,
 };

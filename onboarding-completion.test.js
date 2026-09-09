@@ -6,7 +6,8 @@ const fs = require('node:fs');
 
 const source = fs.readFileSync(require.resolve('./onboarding'), 'utf8');
 const {
-  categorizeOnboarding, isRoleProfileComplete, onboardingRoleNeeds, waitForRoleProfile,
+  categorizeOnboarding, isRoleProfileComplete, onboardingRoleNeeds,
+  recordWithAssignedRoles, waitForRoleProfile,
 } = require('./onboarding');
 
 test('combined completion reminder targets only the incomplete union', () => {
@@ -61,6 +62,18 @@ test('status separates ready role profiles from rules-only completion', () => {
   assert.deepEqual(result.completed.map(member => member.id), ['a']);
   assert.deepEqual(result.rulesPending.map(member => member.id), ['b']);
   assert.deepEqual(result.missingProfile.map(member => member.id), ['c']);
+});
+
+test('status trusts complete bot-managed roles when an older backend omitted onboarding state', () => {
+  const roles = [
+    'Division · Khulna', 'Availability · Full-Time Ready', 'Work Mode · Remote',
+    'English · Advanced', 'Skill · JavaScript',
+  ].map(name => ({ name }));
+  const member = { id: '123', roles: { cache: new Map(roles.map((role, index) => [index, role])) } };
+  const recovered = recordWithAssignedRoles({ userId: '123' }, member);
+  assert.equal(isRoleProfileComplete(recovered), true);
+  assert.equal(recovered.division, 'Khulna');
+  assert.deepEqual(recovered.skills, ['JavaScript']);
 });
 
 test('targeted onboarding reminder and role repair stay separate from profile reminders', () => {

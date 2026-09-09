@@ -35,6 +35,7 @@ const {
   expectedRoleNames,
   isManagedProfileRoleName,
   missingRoleProfileFields,
+  profileFromRoleNames,
   roleProfile,
 } = require('./role-profile');
 
@@ -156,6 +157,22 @@ function isComplete(record) {
 
 function isRoleProfileComplete(record) {
   return missingRoleProfileFields(record).length === 0;
+}
+
+function recordWithAssignedRoles(record, member) {
+  const current = roleProfile(record || {});
+  const assigned = profileFromRoleNames(
+    [...(member?.roles?.cache?.values?.() || [])].map(role => role.name));
+  return {
+    ...(record || {}),
+    userId: String(record?.userId || member?.id || ''),
+    division: current.division || assigned.division,
+    subregion: current.subregion || assigned.subregion,
+    availability: current.availability || assigned.availability,
+    jobFocus: current.jobFocus || assigned.jobFocus,
+    englishLevel: current.englishLevel || assigned.englishLevel,
+    skills: current.skills.length ? current.skills : assigned.skills,
+  };
 }
 
 function categorizeOnboarding(eligible, records) {
@@ -564,7 +581,9 @@ async function postOnboardingStatus(msg, cohort) {
   ]);
   const eligible = [...members.values()].filter(m => !m.user.bot && !cohort.supervisorIds.includes(m.id));
   const eligibleIds = new Set(eligible.map(m => m.id));
-  const eligibleRecords = records.filter(record => eligibleIds.has(String(record.userId)));
+  const recordsById = new Map(records.map(record => [String(record.userId), record]));
+  const eligibleRecords = eligible.map(member =>
+    recordWithAssignedRoles(recordsById.get(member.id) || { userId: member.id }, member));
   const categories = categorizeOnboarding(eligible, eligibleRecords);
   const completedRecords = categories.completed.map(member => categories.recordsById.get(member.id));
   const roleRecords = categories.roleComplete.map(member => categories.recordsById.get(member.id));
@@ -699,9 +718,12 @@ async function onboardingSnapshot(cohort, guild) {
   const [records, members] = await Promise.all([loadAllRecords(cohort), fetchGuildMembers(guild)]);
   const eligible = [...members.values()].filter(member =>
     !member.user.bot && !cohort.supervisorIds.includes(member.id));
-  const recordsById = new Map(records.map(record => [String(record.userId), record]));
+  const rawById = new Map(records.map(record => [String(record.userId), record]));
+  const effectiveRecords = eligible.map(member =>
+    recordWithAssignedRoles(rawById.get(member.id) || { userId: member.id }, member));
+  const recordsById = new Map(effectiveRecords.map(record => [String(record.userId), record]));
   const incomplete = eligible.filter(member => !isComplete(recordsById.get(member.id) || {}));
-  return { eligible, incomplete, records, recordsById, members };
+  return { eligible, incomplete, records: effectiveRecords, recordsById, members };
 }
 
 async function missingRoleProfileSnapshot(cohort, guild) {
@@ -915,7 +937,7 @@ module.exports = function registerOnboarding(client) {
       // finishes saving its record. Recheck for up to 24 seconds so a temporary
       // Apps Script lock cannot show successful intake users a redundant form.
       const rulesMessage = await ensureRulesMessage(client, cohort);
-      const record = await waitForRoleProfile(cohort, member.id);
+      const record = recordWithAssignedRoles(await waitForRoleProfile(cohort, member.id), member);
       const profileComplete = isRoleProfileComplete(record);
       const channel = await client.channels.fetch(cohort.channels.welcome);
       await channel.send({
@@ -936,7 +958,8 @@ module.exports = function registerOnboarding(client) {
     if (interaction.isButton() && interaction.customId === 'onboard:start') {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       try {
-        const record = await loadRecord(cohort, interaction.user.id);
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        const record = recordWithAssignedRoles(await loadRecord(cohort, interaction.user.id), member);
         const url = await rulesMessageUrl(client, cohort);
         if (isRoleProfileComplete(record)) {
           await interaction.editReply({
@@ -958,7 +981,7 @@ module.exports = function registerOnboarding(client) {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       try {
         const member = await interaction.guild.members.fetch(interaction.user.id);
-        const record = await loadRecord(cohort, interaction.user.id);
+        const record = recordWithAssignedRoles(await loadRecord(cohort, interaction.user.id), member);
         if (!isRoleProfileComplete(record)) {
           await interaction.editReply('Your intake role data is still incomplete. Use **Complete missing role profile** instead.');
           return;
@@ -1089,6 +1112,7 @@ module.exports.onboardingOnlyComponents = onboardingOnlyComponents;
 module.exports.onboardingRoleNeeds = onboardingRoleNeeds;
 module.exports.isRoleProfileComplete = isRoleProfileComplete;
 module.exports.categorizeOnboarding = categorizeOnboarding;
+module.exports.recordWithAssignedRoles = recordWithAssignedRoles;
 module.exports.waitForRoleProfile = waitForRoleProfile;
 module.exports.repairOnboardingRoles = repairOnboardingRoles;
 module.exports.sendOnboardingReminder = sendOnboardingReminder;
