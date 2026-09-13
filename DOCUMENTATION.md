@@ -1,6 +1,6 @@
 # JP ADMIN — EJP Mentorship Bot Documentation
 
-**Version:** v3.33 (bot) / v59 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
+**Version:** v3.34 (bot) / v60 expected by `!doctor` (Apps Script; frozen EJP-13 remains v55) · **Updated:** September 2026
 **Stack:** Node.js (discord.js) on Render Free · Google Sheets + Apps Script (database, API, and scheduled wake-up) · Groq AI (llama-3.3-70b)
 
 ---
@@ -215,7 +215,7 @@ and `!set rtbrtop`.
 
 **Rule of thumb: invite the bot with Administrator — all permission hassle disappears.**
 
-1. **Google:** create a Sheet → paste local backend v59 → CONFIG:
+1. **Google:** create a Sheet → paste local backend v60 → CONFIG:
    cohort name, blank FORM_ID if the bot creates Forms, new private SECRET_KEY
    → Deploy →
    **New deployment** → Web app → Execute as Me → **Anyone** → copy `/exec`
@@ -240,10 +240,12 @@ Standard channel names (auto-discovery): `welcome-to-the-bootcamp, rules-and-reg
 5. Keep the complete contact master in **All Data**. `!syncmembers` uses it
    first, fills gaps from Forms/`Bot_Map Archive`, and records every eligible
    member in `Roster Review`. Columns E:I in Roster Review are durable manual
-   corrections and survive later syncs. Members missing from every Sheet source
-   receive a clearly marked provisional internal identity and are still added to
-   every tracking roster; replace the pending email manually or through the
-   private survey to migrate their operational history. Run `!profilecheck` for a definitive current-member
+   corrections and survive later syncs. The backend also discovers OAuth intake
+   and safe legacy contact tabs by headers. Members without a durable Discord-ID
+   match or complete real-email/full-name/phone profile stay only in private
+   Roster Review and automatically receive the private survey; no synthetic
+   email or null phone enters tracking. Attendance and aggregate activity reports
+   pause until every current student is safely linked. Run `!profilecheck` for a definitive current-member
    coverage refresh, then `!missingdata` for targeted private DM surveys or
    `!profilesurvey #channel` for a public reminder whose answers remain private.
    Use `!addstudent` only as the

@@ -143,7 +143,7 @@ Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete the fou
 
 1. **Google permissions** tests the Web App connection.
 2. **Match channels** reuses configured or recognized existing channels and creates only missing standard channels.
-3. **Sync students** captures current non-bot, non-supervisor server members even without intake. Unverified members receive stable provisional identities until their private profiles are completed.
+3. **Sync students** captures every current non-bot, non-supervisor member in private Roster Review. It searches All Data, OAuth intake, Form responses, safe legacy contact tabs, and Bot_Map history. Only verified real-email/full-name/phone profiles enter attendance and activity tracking; unresolved students receive a private form automatically.
 4. **Verify** checks the backend and protected-channel permissions.
 
 Finish with:
@@ -173,9 +173,17 @@ rechecked automatically before the fallback is offered.
 !checkperms
 !doctor
 !syncmembers
+!profilecheck
 ```
 
-These diagnostics suppress mentions and do not ping students. Required backend, permissions, roster, and schedule checks should pass. Optional Groq/AI checks can remain disabled if you intentionally did not add an AI key.
+These diagnostics suppress mentions and do not ping students. `!syncmembers`
+searches recognized Sheet tabs and captures every current member in private
+Roster Review, but admits only a real-email/full-name/valid-phone identity to
+tracking. Discord display names and generated `@discord.com` addresses are never
+trusted. Unrecognized members receive one private form; do not start public
+reports until `!profilecheck` says every current student is linked and complete.
+Required backend, permissions, roster, and schedule checks should pass. Optional
+Groq/AI checks can remain disabled if you intentionally did not add an AI key.
 
 ## Checkpoint 8 — start normal cohort operation
 
@@ -187,7 +195,7 @@ Daily essentials:
 | --- | --- | --- |
 | Health | `!doctor` | Private; no student ping |
 | Permissions | `!checkperms` | Private; no student ping |
-| Students | `!syncmembers` | Updates durable roster/tracking rows |
+| Students | `!syncmembers`, then `!profilecheck` | Captures all members; tracks only verified real-email/phone profiles |
 | Profile roles | `!rolerepair [#channel]` | Repairs saved roles; mentions only students missing required role data |
 | Attendance | `!formstatus`, then `!openform` / `!closeform` | Open/close posts are student-facing |
 | Job trackers | `!checkjobsheets YYYY-MM-DD` | Private read-only audit; no ping/write |

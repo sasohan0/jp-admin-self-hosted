@@ -31,7 +31,7 @@ Run supervisor commands in the private `#bot-admin` unless a row explicitly name
 
 | Command | What it does |
 | --- | --- |
-| `!syncmembers` | Sync every current Discord student; preserve Roster Review edits and repair all tracking rows |
+| `!syncmembers` | Capture every member; track only verified real-email/phone profiles and privately request missing data |
 | `!missingdata` | Private dashboard: see missing profile fields and send students DM surveys |
 | `!studentsurvey incomplete` | Open the private missing-profile survey dashboard |
 | `!studentsurvey attention [days] [send]` | Preview or send surveys to incomplete students with no job activity |

@@ -56,6 +56,7 @@ const CHANNEL_SURVEY_PREFIX = 'jp_profile_channel:';
 const ADMIN_EDIT_PREFIX = 'jp_profile_admin_edit:';
 const ADMIN_SUBMIT_PREFIX = 'jp_profile_admin_submit:';
 const LEGACY_VERIFY_BUTTON_ID = 'jp_roster_verify_start';
+const automaticDeliveryRuns = new Map();
 
 function normalizeMissingFields(fields) {
   const wanted = new Set((fields || []).map(value => String(value || '').trim().toLowerCase()));
@@ -309,7 +310,7 @@ function profileInitialValues(profile, member) {
   const email = String(profile?.email || '').trim();
   return {
     name: profile?.name || member?.displayName || member?.user?.globalName || member?.user?.username || '',
-    email: /@pending\.jp-admin\.invalid$/i.test(email) ? '' : email,
+    email: /@(?:pending\.jp-admin\.invalid|discord\.com)$/i.test(email) ? '' : email,
     phone: profile?.phone || '',
     region: profile?.region || '',
     subregion: profile?.subregion || '',
@@ -381,6 +382,32 @@ async function sendPrivateSurveys(client, cohort, profiles) {
   return result;
 }
 
+function selectUndeliveredProfiles(profiles) {
+  return (profiles || []).filter(profile => {
+    const status = String(profile.deliveryStatus || '').trim().toUpperCase();
+    return !status || status === 'NOT IN SERVER';
+  });
+}
+
+async function deliverNewPrivateSurveys(client, cohort) {
+  const guildId = String(cohort?.guildId || '');
+  if (automaticDeliveryRuns.has(guildId)) return automaticDeliveryRuns.get(guildId);
+  const run = (async () => {
+    const current = await backendGet(cohort, 'missingprofiles');
+    const pending = selectUndeliveredProfiles(current.profiles);
+    if (!pending.length) return { attempted: 0, sent: [], dmClosed: [], absent: [] };
+    const result = await sendPrivateSurveys(client, cohort, pending);
+    result.attempted = pending.length;
+    return result;
+  })();
+  automaticDeliveryRuns.set(guildId, run);
+  try {
+    return await run;
+  } finally {
+    if (automaticDeliveryRuns.get(guildId) === run) automaticDeliveryRuns.delete(guildId);
+  }
+}
+
 async function sendDeliveryReport(channel, result) {
   const summary = [
     `✅ Private surveys sent: ${result.sent.length}`,
@@ -418,11 +445,14 @@ function resolveAdminCohort(interaction) {
 function hasCompletePrivateProfile(entry) {
   if (!entry) return false;
   const email = String(entry.email || '').trim().toLowerCase();
+  const phoneDigits = String(entry.phone || '').replace(/\D/g, '');
   return Boolean(
     String(entry.name || '').trim() &&
     /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) &&
     !email.endsWith('@pending.jp-admin.invalid') &&
-    String(entry.phone || '').trim() &&
+    !email.endsWith('@discord.com') &&
+    !email.endsWith('.invalid') &&
+    phoneDigits.length >= 8 && phoneDigits.length <= 15 &&
     String(entry.region || '').trim() &&
     (!/^dhaka$/i.test(String(entry.region || '').trim()) || String(entry.subregion || '').trim()),
   );
@@ -453,11 +483,20 @@ module.exports = function registerStudentDataSurvey(client) {
   const joinRosterSync = createJoinRosterSyncQueue({
     sync: syncMembers,
     delayMs: 30000,
-    onSuccess: (cohort, result) => {
+    onSuccess: async (cohort, result) => {
       console.log(
         `[student-data] ${cohort.name}: Discord roster reconciled ` +
         `(${result.eligibleMembers} current students)`,
       );
+      if (!(result.unmatched || []).length) return;
+      try {
+        const delivery = await deliverNewPrivateSurveys(client, cohort);
+        if (!delivery.attempted) return;
+        const channel = await client.channels.fetch(cohort.channels.supervisor).catch(() => null);
+        if (channel?.isTextBased()) await sendDeliveryReport(channel, delivery);
+      } catch (err) {
+        console.error(`[student-data] automatic private survey failed for ${cohort.name}: ${err.message}`);
+      }
     },
     onError: async (cohort, err, attempt) => {
       console.error(
@@ -873,3 +912,5 @@ module.exports.parseEditProfileTargetId = parseEditProfileTargetId;
 module.exports.channelSurveyButton = channelSurveyButton;
 module.exports.hasCompletePrivateProfile = hasCompletePrivateProfile;
 module.exports.selectAttentionProfiles = selectAttentionProfiles;
+module.exports.deliverNewPrivateSurveys = deliverNewPrivateSurveys;
+module.exports.selectUndeliveredProfiles = selectUndeliveredProfiles;

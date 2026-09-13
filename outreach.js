@@ -8,7 +8,7 @@
 // ============================================================
 
 const { cohorts } = require('./config');
-const { getRoster, isExcluded, mention, rosterForBackfill, syncMembers } = require('./roster');
+const { getRoster, isExcluded, mention, requireCompleteIdentityCoverage, rosterForBackfill, syncMembers } = require('./roster');
 const { isOn } = require('./automations');
 const { getNumber, resolveChannel } = require('./settings');
 const { isScheduledToday } = require('./scheduler');
@@ -208,7 +208,10 @@ async function runOutreachCheck(client, cohort, manual = false) {
   try {
     if (!manual && !(await isOn(cohort, 'outreach'))) { console.log(`[outreach] ${cohort.name}: automation OFF`); return; }
     if (!manual && !(await isScheduledToday(cohort, 'outreach'))) { console.log(`[outreach] ${cohort.name}: not scheduled today`); return; }
-    await syncMembers(client, cohort);
+    requireCompleteIdentityCoverage(
+      await syncMembers(client, cohort, { force: true }),
+      'Outreach report',
+    );
     const staleDays = await getNumber(cohort, 'outreachstale');
     const dailyTarget = await getNumber(cohort, 'outreachdaily');
     const [status, performance, roster] = await Promise.all([

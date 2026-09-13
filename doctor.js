@@ -21,7 +21,7 @@ const { getSetupDate } = require('./state');
 const { getIntakeSettings, portalBaseUrl, portalConfigProblems, validateIntakeBackend } = require('./intake-settings');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
 
-const EXPECTED_VERSION = 'v59';
+const EXPECTED_VERSION = 'v60';
 function expectedVersion(cohort) {
   // EJP-13 is intentionally closing and must not be redeployed for this role
   // rollout. Its v55 backend remains a supported frozen exception.

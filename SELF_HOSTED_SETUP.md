@@ -132,7 +132,14 @@ Return to private `#bot-admin`, run `/setup` (or `!setup`), and complete:
 
 1. **Google permissions** → **Done — test connection**. This performs a read-only backend health check.
 2. **Match channels**. Existing configured or recognized channels are reused. Only missing channels are created. Private and announcement-only permissions are repaired.
-3. **Sync students**. Every current eligible Discord member is captured. Members without intake receive a provisional private identity so attendance, jobs, outreach, and later profile collection can work. Stale or duplicate mappings are archived rather than silently deleted.
+3. **Sync students**. Every current eligible Discord member is captured in
+   `Roster Review`. JP ADMIN searches `All Data`, `Intake Responses`, the
+   configured enrollment tab, and safe legacy contact tabs. Only a real email,
+   full name, and valid phone enter `Bot_Map` and tracking. A Discord display
+   name is never accepted as proof of identity, and fake `@discord.com` or
+   placeholder emails are rejected. Unrecognized students receive the private
+   missing-data form automatically; stale or duplicate mappings are archived
+   rather than silently deleted.
 4. **Verify**. The bot checks backend health and protected-channel permissions.
 
 Then run these private commands:
@@ -143,7 +150,13 @@ Then run these private commands:
 !checkperms
 !doctor
 !syncmembers
+!profilecheck
 ```
+
+Do not start public attendance, jobs, outreach, or aggregate activity reports
+until `!profilecheck` says every current student is captured, linked, and
+complete. If a student's DM is blocked, use the **Send / retry pending surveys**
+button or `!profilesurvey #discussion`; submitted contact data remains private.
 
 The starter preset keeps attendance, job tracking, and content sync ready, but
 holds noisy student programmes until the mentor deliberately starts them. It
@@ -194,7 +207,11 @@ After the manager saves the cohort, JP ADMIN restarts and loads the durable regi
 - **Invalid token:** reset the token in Discord, replace only `DISCORD_TOKEN` in Render, and restart. Never run two services with the same token.
 - **Apps Script test fails:** confirm the Web App URL ends in `/exec`, deployment access is Anyone, and `CONFIG.SECRET_KEY` exactly matches Render's generated key.
 - **Duplicate-looking channels:** do not delete anything. Run `!ensurechannels`, inspect the result, and configure aliases/IDs only after identifying the intended channel.
-- **Existing students are missing:** ensure Server Members Intent is enabled, then run `!syncmembers` again in private `#bot-admin`.
+- **Existing students are missing:** enable Server Members Intent, keep their
+  existing real email/name/phone data in any recognized Sheet tab, then run
+  `!syncmembers` and `!profilecheck` in private `#bot-admin`. Do not invent an
+  email from a Discord name. Use the private survey retry when a match remains
+  unresolved.
 - **`/setup` is missing:** reinstall the bot using both OAuth scopes: `bot` and `applications.commands`.
 - **A mentor cannot use setup:** have the server owner run `/setup`, then add the mentor with `!supervisor add @mentor` in private `#bot-admin`.
 - **`!setup` is silent:** use `/setup`; then enable Message Content Intent and restart Render so all prefix commands work.

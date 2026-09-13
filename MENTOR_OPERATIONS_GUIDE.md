@@ -18,7 +18,19 @@ Run these in private `#bot-admin`, in order:
 !control
 ```
 
-`!syncmembers` includes current non-bot, non-supervisor server members even if they did not complete intake. `!repairpipelines` adds or repairs operational identity rows without deleting history. For a new cohort, run `!automation starter` once: quiet essentials stay enabled and noisy programme channels remain hidden until their matching automation starts. `!checkattendance` and `!checkjobsheets` are private diagnostics; they do not ping students. Fix every required `!doctor` failure before enabling public automation. Optional features such as Groq may remain off if they were intentionally not configured.
+`!syncmembers` captures every current non-bot, non-supervisor member in `Roster
+Review`, even without intake. It searches recognized Sheet tabs, but only a real
+email, full name, and valid phone enter tracking; Discord names alone and fake
+addresses are never trusted. Unrecognized students receive one private form.
+Run `!profilecheck` and resolve every pending profile before public attendance,
+jobs, outreach, or aggregate activity reports. `!repairpipelines` repairs rows
+only for those verified identities without deleting history. For a new cohort,
+run `!automation starter` once: quiet essentials stay enabled and noisy
+programme channels remain hidden until their matching automation starts.
+`!checkattendance` and `!checkjobsheets` are private diagnostics; they do not
+ping students. Fix every required `!doctor` failure before enabling public
+automation. Optional features such as Groq may remain off if intentionally not
+configured.
 
 Run `!rolerepair` before inviting students when possible. If members already
 exist, it assigns independent division, Dhaka-area, availability, work-mode,
@@ -58,7 +70,9 @@ Presence comes from the active Form responses matched to the current Discord ros
 1. Decide whether the Sheet already has real history:
    - existing data: `!setupsheets existing`
    - truly empty new cohort: `!setupsheets empty confirm`
-2. Run `!syncmembers` so every current student has an operational row.
+2. Run `!syncmembers`, then require `!profilecheck` to report zero pending
+   identities. Only then will every current student have a verified operational
+   row.
 3. Students place their public Google Sheet tracker links in the configured jobs channel. The selected Sheet-tab `gid` in each link is preserved.
 4. Run `!backfilljobsheets` to import tracker links from the latest three calendar days. Use `!backfilljobsheets 7 days` or another 1-30-day window only when needed. The import is idempotent and does not change older daily job counts.
 5. Run `!checkjobsheets` privately. It reads public tracker tabs, reports invalid or unparseable dates, and never pings students or writes job scores/counts.
@@ -151,7 +165,10 @@ The complete categorized list is in `MENTOR_COMMAND_REFERENCE.md`. The live priv
 - Bot offline: check Render **Live**, then `/health`. HTTP 200 with `ready` means Discord is connected; `scheduled_offline` means the saved operating window is intentionally closed; HTTP 503 means startup or Discord readiness failed. Then inspect Render events/logs and the public Render status page before changing tokens or channels.
 - Attendance mismatch: `!checkattendance` → `!repairattendance` → recheck.
 - Jobs mismatch: `!checkjobsheets <date>` → verify tracker `gid` and dates → recheck.
-- Missing students: enable **Server Members Intent**, then `!syncmembers`.
+- Missing students: enable **Server Members Intent**, run `!syncmembers`, then
+  `!profilecheck`. Keep any existing real contact rows in the Sheet; use the
+  private survey retry for unmatched members rather than inventing identity
+  from a Discord display name.
 - Missing or stale profile roles: move the bot role above managed roles, run `!doctor onboarding`, then `!rolerepair [#channel]`.
 - Channel issue: `!checkperms` → `!repairpermissions`; do not delete or recreate channels.
 - Backend issue: verify the existing Apps Script `/exec` deployment and matching secret, then `!doctor sheet` and `!doctor post`.

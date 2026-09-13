@@ -13,7 +13,7 @@
 const { runQuotaTask } = require('./quota-queue');
 const { MessageFlags } = require('discord.js');
 const { cohorts } = require('./config');
-const { getRoster, isExcluded, mention, rosterForBackfill, setRosterSnapshot, syncMembers } = require('./roster');
+const { getRoster, isExcluded, mention, requireCompleteIdentityCoverage, rosterForBackfill, setRosterSnapshot, syncMembers } = require('./roster');
 const { isWarmup } = require('./state');
 const { isScheduledToday } = require('./scheduler');
 const { isOn } = require('./automations');
@@ -142,9 +142,13 @@ async function runJobsCheck(client, cohort, manual = false, targetDate = '') {
   cfg.historyDays = await getNumber(cohort, 'jobshistory');
   try {
     // The nightly public report must represent the Discord server as it exists
-    // now, not a stale Bot_Map snapshot. v34+ preserves supervisor review edits
-    // and provisions unmatched members, so this refresh cannot drop them.
-    await syncMembers(client, cohort);
+    // now, not a stale Bot_Map snapshot. Unmatched members stay visible in
+    // Roster Review, but cannot be omitted from a public report or admitted
+    // under fabricated contact details.
+    requireCompleteIdentityCoverage(
+      await syncMembers(client, cohort, { force: true }),
+      'Nightly job check',
+    );
     // Reconcile recent durable Discord history before reading Job_Sheets. This
     // automatically recovers a tracker link whose real-time save met a
     // temporary Google Web App outage, without asking the student to repost.

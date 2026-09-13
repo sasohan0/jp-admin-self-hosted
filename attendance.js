@@ -61,6 +61,11 @@ function attendanceResponsePolicy(data) {
   };
 }
 
+function rosterIdentityCoverage(syncResult) {
+  const pending = Array.isArray(syncResult?.unmatched) ? syncResult.unmatched : [];
+  return { ready: pending.length === 0, pendingCount: pending.length };
+}
+
 // A same-name active account in both present and absent results is usually a
 // duplicate Discord account. Never guess which account should be removed and
 // never publicly accuse the absent account until a supervisor resolves it.
@@ -691,9 +696,23 @@ function setupAttendance(client) {
 async function postAttendance(client, cohort, requestedDate = '') {
   try {
     // Attendance must use the current Discord membership, not yesterday's
-    // Bot_Map. v34+ preserves manual review edits and provisions unmatched
-    // members before the report is calculated.
-    await syncMembers(client, cohort);
+    // Bot_Map. Unmatched members stay in private Roster Review and must never
+    // enter attendance under a generated email or an empty phone number.
+    const rosterSync = await syncMembers(client, cohort, { force: true });
+    const identityCoverage = rosterIdentityCoverage(rosterSync);
+    if (!identityCoverage.ready) {
+      const admin = await client.channels.fetch(cohort.channels.supervisor).catch(() => null);
+      if (admin?.isTextBased()) {
+        await admin.send({
+          content:
+            `⛔ **Attendance report stopped — ${identityCoverage.pendingCount} current student identity ` +
+            `profile(s) need a real email/phone.** No generated email was accepted and no student was pinged. ` +
+            'Use `!profilecheck`, send/retry the private surveys, then run `!attendance` again.',
+          allowedMentions: { parse: [] },
+        });
+      }
+      return { posted: false, reason: 'incomplete-current-student-identity' };
+    }
     const today = new Date().toLocaleDateString('en-CA', { timeZone: cohort.timezone });
     const historic = requestedDate && requestedDate !== today;
     const raw = await appsScriptGet(cohort, historic ? {
@@ -888,6 +907,7 @@ module.exports = {
   attendanceNameKey,
   conflictingAttendanceIdentities,
   attendanceResponsePolicy,
+  rosterIdentityCoverage,
   attendanceSegments,
   parseAttendancePublication,
   reconcileAttendanceRoster,

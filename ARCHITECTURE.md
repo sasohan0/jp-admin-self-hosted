@@ -211,19 +211,20 @@ checked during changes.
 `roster.js` loads `Bot_Map` plus manual exclusions through one `action=roster`
 execution and caches them for ten minutes. Discord membership is the active
 roster source of truth. `!syncmembers` submits only current non-bot,
-non-supervisor members to Apps Script v59, which corroborates current or
-archived Discord IDs, unique normalized names, `All Data`, and enrollment
-identity fields before rebuilding `Bot_Map`. `All Data` is the preferred
-contact/location source and `Bot_Map Archive` fills missing historical region
-and subregion values. Submitted usernames are hints, never proof by themselves.
-Every eligible member is written to `Roster Review`. Supervisor edits in
-columns E:I are durable inputs on later syncs. A member without a verified
-Sheet match receives a unique provisional internal email and is still written
-to Bot_Map, All Data, Attendance, Jobs Applied, Outreach Update, Interview Updates, and Job_Sheets;
-the profile remains visibly incomplete until a real email/contact profile is
-collected. Replacing a provisional email migrates operational identity rows and
-history instead of creating a disconnected duplicate. No current eligible
-Discord member is omitted merely because no verified email mapping exists.
+non-supervisor members to Apps Script v60, which corroborates current or
+archived Discord IDs, OAuth intake Discord IDs, `All Data`, recognized
+enrollment responses, and safe identity/contact tabs discovered by their
+headers before rebuilding `Bot_Map`. A Discord ID is authoritative; username
+plus matching name may corroborate a record, but a display-name-only match is
+never written automatically. Every eligible member is written to `Roster
+Review`, and supervisor edits in columns E:I remain durable. Only profiles with
+a real non-Discord-domain email, a Sheet-backed full name, and an 8–15 digit
+phone enter Bot_Map, All Data, Attendance, Jobs Applied, Outreach Update,
+Interview Updates, or Job_Sheets. Unrecognized/incomplete members remain in
+private review and receive the Discord-ID-bound private profile form once;
+public attendance and aggregate activity reports pause instead of silently
+omitting them. Historical synthetic-email rows are preserved for migration or
+audit but are never treated as active identities.
 Onboarding division may fill a missing profile region without exposing
 private onboarding answers in Discord. Portal-admitted members get a short
 profile synchronization grace period so the normal join handler does not send
@@ -287,7 +288,7 @@ submission controls mood/interview summaries, and an explicit no-interview
 confirmation vetoes a contradictory Yes. The shared form trigger continues to
 process enrollment submissions.
 
-Apps Script v59 also exposes a private date-bounded absence report and
+Apps Script v60 also exposes a private date-bounded absence report and
 attendance roster/response audit. The Node
 side parses `current`, `previous`, a date, or month-week phrases such as
 `july week 1`, then renders contact-rich TSV only inside `#bot-admin`. After
@@ -298,7 +299,7 @@ three-or-more recorded-session absence runs from the current or previous week;
 Form definitions originate in `form-templates.js`. `cohort-admin.js` stores the
 working enrollment and attendance definitions separately in guild-namespaced
 Apps Script state and can copy them into named reusable pairs. Creation sends a
-validated definition to Apps Script v59, which supports text, paragraph,
+validated definition to Apps Script v60, which supports text, paragraph,
 choice, checkbox, scale, date, and time fields. Semantic field keys are saved
 with the created Forms so edited student-facing wording does not break roster
 or attendance header lookup.

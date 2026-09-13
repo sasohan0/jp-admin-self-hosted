@@ -51,6 +51,12 @@ module.exports = function registerSyncCommand(client) {
       }));
       const needsReview = r.unmatched || [];
       const rosterReview = r.rosterReview || {};
+      let surveyDelivery = null;
+      if (needsReview.length) {
+        surveyDelivery = await require('./student-data-survey')
+          .deliverNewPrivateSurveys(client, cohort)
+          .catch(error => ({ error: String(error.message || error) }));
+      }
 
       await msg.channel.send({
         embeds: [{
@@ -66,7 +72,7 @@ module.exports = function registerSyncCommand(client) {
               inline: false,
             },
             { name: '🆕 Newly linked', value: String(r.linkedNow || 0), inline: true },
-            { name: '🪪 Provisional identities created', value: String(r.provisionalCreated || 0), inline: true },
+            { name: '🔒 Awaiting verified identity', value: String(r.identityPending || needsReview.length), inline: true },
             { name: '💾 Existing links kept', value: String(r.kept || 0), inline: true },
             { name: '🧹 Duplicate rows merged', value: String(r.duplicatesMerged || 0), inline: true },
             { name: '📦 Stale rows archived', value: String(r.archived || 0), inline: true },
@@ -97,12 +103,22 @@ module.exports = function registerSyncCommand(client) {
                 ? r.enrollmentSourceTabs.join(', ').slice(0, 1024)
                 : 'No enrollment/Form identity tab detected',
             },
+            {
+              name: 'Private data request',
+              value: surveyDelivery?.error
+                ? `Could not send automatically: ${surveyDelivery.error}`.slice(0, 1024)
+                : surveyDelivery?.attempted
+                  ? `${surveyDelivery.sent.length} DM(s) sent; ${surveyDelivery.dmClosed.length} blocked`
+                  : needsReview.length
+                    ? 'Already delivered earlier; use !missingdata to review/retry'
+                    : 'Not required',
+            },
           ],
           footer: {
             text: r.replacementSkipped
               ? 'Roster Review is complete. Collect private profiles, then rerun !syncmembers.'
               : needsReview.length
-              ? 'All current Discord students remain trackable. Complete provisional profiles through !profilesurvey; manual edits in Roster Review columns E:I are preserved.'
+              ? 'Only verified real-email/phone profiles enter tracking. Complete pending profiles through the private survey; manual edits in Roster Review columns E:I are preserved.'
               : 'Discord membership is now the active-student source of truth; Roster Review columns E:I remain supervisor-editable.',
           },
         }],

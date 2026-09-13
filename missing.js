@@ -1,7 +1,7 @@
 // ============================================================
 //  missing.js - full two-way identity audit
 //   !audit (alias !findmissing) - check EVERY server member
-//     against the Sheet, auto-match via All Data, AND report
+//     against the Sheet without trusting display-name-only matches, AND report
 //     All Data students with no Discord presence (reverse)
 //   !addstudent <email> @user   - manually link one person
 //  In index.js:  require('./missing')(client);
@@ -82,7 +82,7 @@ module.exports = function registerMissing(client) {
             title: `🧩 Server ↔ Sheet Audit — ${cohort.name}`,
             color: (data.manual.length || missing.length) ? 0xe67e22 : 0x2ecc71,
             fields: [
-              { name: 'Auto-matched now (' + data.added.length + ')', value: addedText.slice(0, 1024) },
+              { name: 'Safely linked now (' + data.added.length + ')', value: addedText.slice(0, 1024) },
               { name: 'Unknown in Discord — need manual link (' + data.manual.length + ')', value: manualText.slice(0, 1024) },
             ],
             footer: { text: 'After manual links, run !backfilloutreach (3 days by default) or specify up to 30 days.' },
@@ -126,7 +126,7 @@ module.exports = function registerMissing(client) {
       await msg.reply(
         `✅ Linked **${data.name}** \`${emailMatch[0]}\` to <@${target.id}>` +
         `\n• Bot_Map: ${data.botMap} | Attendance: ${data.attendance}` +
-        (data.inAllData ? '' : '\n⚠️ Email not found in All Data — added with Discord display name; fix the name in Bot_Map if wrong.') +
+        (data.inAllData ? '' : '\nℹ️ Identity came from another recognized Sheet tab; no Discord display name was used as the official name.') +
         `\n💡 Run \`!backfilloutreach\` for the latest 3 days, or add a 1-30-day window.`
       );
     } catch (err) {

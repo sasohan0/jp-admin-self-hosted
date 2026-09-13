@@ -11,6 +11,7 @@ const {
   parseEditProfileTargetId,
   parseSurveyCustomId,
   selectAttentionProfiles,
+  selectUndeliveredProfiles,
 } = require('./student-data-survey');
 
 test('portal-admitted members with complete private data do not receive a duplicate survey', () => {
@@ -26,6 +27,28 @@ test('portal-admitted members with complete private data do not receive a duplic
     name: 'Student', email: 'discord.785818245977735169@pending.jp-admin.invalid',
     phone: '01700000000', region: 'Dhaka', subregion: 'Mirpur',
   }), false);
+  assert.equal(hasCompletePrivateProfile({
+    name: 'Student', email: 'student123@discord.com',
+    phone: '01700000000', region: 'Dhaka', subregion: 'Mirpur',
+  }), false);
+  assert.equal(hasCompletePrivateProfile({
+    name: 'Student', email: 'student@example.com',
+    phone: '123', region: 'Dhaka', subregion: 'Mirpur',
+  }), false);
+});
+
+test('automatic reconciliation asks each newly unresolved student only once', () => {
+  const profiles = [
+    { discordId: '1', deliveryStatus: '' },
+    { discordId: '2', deliveryStatus: 'NOT IN SERVER' },
+    { discordId: '3', deliveryStatus: 'SENT' },
+    { discordId: '4', deliveryStatus: 'DM BLOCKED' },
+    { discordId: '5', deliveryStatus: 'COMPLETED' },
+  ];
+  assert.deepEqual(
+    selectUndeliveredProfiles(profiles).map(profile => profile.discordId),
+    ['1', '2'],
+  );
 });
 
 test('private survey fields are allow-listed and kept in stable modal order', () => {

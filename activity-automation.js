@@ -7,7 +7,7 @@
 const { cohorts } = require('./config');
 const { appsScriptGet, appsScriptPost } = require('./apps-script-api');
 const { isOn } = require('./automations');
-const { getRoster, isExcluded, mention, syncMembers } = require('./roster');
+const { getRoster, isExcluded, mention, requireCompleteIdentityCoverage, syncMembers } = require('./roster');
 const { getNumber, getSetting } = require('./settings');
 const { isScheduledToday } = require('./scheduler');
 const { scheduleAtSetting } = require('./runtime-schedule');
@@ -164,7 +164,7 @@ async function sendPrivateContactReport(client, cohort, title, students, detailF
 }
 
 async function activeRoster(client, cohort) {
-  await syncMembers(client, cohort);
+  requireCompleteIdentityCoverage(await syncMembers(client, cohort), 'Activity report');
   return (await getRoster(cohort, true)).filter(student => !isExcluded(cohort, student));
 }
 

@@ -39,9 +39,9 @@ const EXPECTED_ACTIONS = [
   'mailerstatus', 'sendCohortEmailBatch',
 ];
 
-test('Apps Script v59 source parses and exposes every bot API action', () => {
+test('Apps Script v60 source parses and exposes every bot API action', () => {
   assert.doesNotThrow(() => new Function(source));
-  assert.match(source, /const VERSION = 'v59'/);
+  assert.match(source, /const VERSION = 'v60'/);
   assert.match(source, /body\.action === 'saveDawnAttendance'/);
   assert.match(source, /body\.action === 'saveDawnMembershipEvent'/);
   assert.match(source, /body\.action === 'repairDawnAttendance'/);
@@ -388,34 +388,47 @@ test('OAuth intake is append-structured, idempotent, and activates only through 
   assert.doesNotMatch(intake, /appendToBotMap|upsertActiveIdentityRows|upsertJobSheetRosterRows/);
 });
 
-test('Discord-only students receive stable provisional identities without appearing profile-complete', () => {
+test('synthetic Discord emails and unusable phones can never become verified student identities', () => {
   const helpers = [
     extractFunction('normalizeStudentEmail'),
     extractFunction('normalizeDiscordId'),
     extractFunction('provisionalStudentEmail'),
     extractFunction('isProvisionalStudentEmail'),
+    extractFunction('isSyntheticStudentEmail'),
     extractFunction('validStudentProfileEmail'),
+    extractFunction('validStudentProfilePhone'),
   ].join('\n');
-  const api = new Function(`${helpers}; return { provisionalStudentEmail, isProvisionalStudentEmail, validStudentProfileEmail };`)();
+  const api = new Function(`${helpers}; return { provisionalStudentEmail, isProvisionalStudentEmail, isSyntheticStudentEmail, validStudentProfileEmail, validStudentProfilePhone };`)();
   const email = api.provisionalStudentEmail('123456789012345678');
   assert.equal(email, 'discord.123456789012345678@pending.jp-admin.invalid');
   assert.equal(api.isProvisionalStudentEmail(email), true);
   assert.equal(api.validStudentProfileEmail(email), '');
+  assert.equal(api.validStudentProfileEmail('someone@discord.com'), '');
   assert.equal(api.validStudentProfileEmail('student@example.com'), 'student@example.com');
+  assert.equal(api.validStudentProfilePhone('01700-000000'), '01700000000');
+  assert.equal(api.validStudentProfilePhone('123'), '');
+  assert.doesNotMatch(extractFunction('syncDiscordRosterCore'), /provisionalStudentEmail\(/);
 });
 
-test('roster sync preserves supervisor review fields and provisions every Discord student', () => {
-  assert.match(source, /previous\[4\] \|\| values\[0\]/);
+test('roster sync captures everyone for review but tracks only verified real-email and phone profiles', () => {
+  assert.match(source, /validStudentProfileEmail\(previous\[4\]\) \|\| values\[0\]/);
   assert.match(source, /previous\[5\] \|\| values\[1\]/);
-  assert.match(source, /previous\[6\] \|\| values\[7\]/);
+  assert.match(source, /validStudentProfilePhone\(previous\[6\]\) \|\| values\[7\]/);
   assert.match(source, /previous\[7\] \|\| values\[5\]/);
   assert.match(source, /previous\[8\] \|\| values\[6\]/);
-  assert.match(source, /Discord provisional profile/);
+  assert.match(source, /const reviewEntries = \[\]/);
+  assert.match(source, /identityPending: unmatched\.length/);
   assert.match(source, /function syncAllDataRosterEntries\(/);
   assert.match(source, /function upsertJobSheetRosterRows\(/);
   assert.match(source, /function migrateStudentEmail\(/);
   assert.match(source, /linkedEmail \|\| \(linkedById && suppliedEmail\) \|\| reviewEmail/);
   assert.match(source, /PROFILE INCOMPLETE/);
+  assert.match(source, /const intake = ss\.getSheetByName\(intakeResponsesName\(\)\)/);
+  assert.match(source, /const discordIdCol = findHeader\(headers, \['Discord ID', 'Discord User ID'\]\)/);
+  assert.match(source, /name-only match is not trusted/);
+  const submitProfile = extractFunction('submitStudentProfile');
+  assert.match(submitProfile, /const legacyRecord = enrollmentIdentityRecords\(\)\.records\.find/);
+  assert.match(submitProfile, /email and phone do not match the existing Sheet record/);
 });
 
 test('roster candidate selection never trusts a submitted username without name corroboration', () => {
@@ -424,14 +437,15 @@ test('roster candidate selection never trusts a submitted username without name 
   const choose = new Function(`${helper[0]}; return chooseRosterCandidate;`)();
   assert.deepEqual(choose(['id@example.com'], [], [], []), {
     email: 'id@example.com',
-    source: 'Existing or archived Discord ID',
+    source: 'Verified Discord ID',
   });
   assert.deepEqual(choose([], ['form@example.com'], [], []), {
     email: 'form@example.com',
     source: 'Username + matching student name',
   });
   assert.match(choose([], [], [], ['wrong@example.com']).error, /private data survey/);
-  assert.match(choose([], [], ['one@example.com', 'two@example.com'], []).error, /multiple/);
+  assert.match(choose([], [], ['name@example.com'], []).error, /name-only match is not trusted/);
+  assert.match(choose([], [], ['one@example.com', 'two@example.com'], []).error, /name-only match is not trusted/);
 });
 
 test('name identity keys handle common Bangladesh name prefixes and Discord decoration', () => {

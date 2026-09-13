@@ -7,7 +7,17 @@ const {
   conflictingAttendanceIdentities,
   parseAttendancePublication,
   reconcileAttendanceRoster,
+  rosterIdentityCoverage,
 } = require('./attendance');
+
+test('attendance fails closed while any current Discord student lacks verified identity data', () => {
+  assert.deepEqual(rosterIdentityCoverage({ unmatched: [] }), {
+    ready: true, pendingCount: 0,
+  });
+  assert.deepEqual(rosterIdentityCoverage({ unmatched: [{ discordId: '1' }] }), {
+    ready: false, pendingCount: 1,
+  });
+});
 
 test('unmatched identities are rejected without blocking attendance', () => {
   assert.deepEqual(attendanceResponsePolicy({

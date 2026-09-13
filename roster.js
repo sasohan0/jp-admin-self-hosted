@@ -147,6 +147,17 @@ function syncMembers(client, cohort, options = {}) {
   return syncCoordinator.sync(client, cohort, options);
 }
 
+function requireCompleteIdentityCoverage(result, operation = 'Operation') {
+  const pending = Array.isArray(result?.unmatched) ? result.unmatched.length : 0;
+  if (pending) {
+    throw new Error(
+      `${operation} paused: ${pending} current student profile(s) need a real email and valid phone. ` +
+      'Run !profilecheck and complete the private surveys.',
+    );
+  }
+  return result;
+}
+
 async function rosterForBackfill(client, cohort, options = {}) {
   const sync = options.sync || syncMembers;
   const read = options.read || getRoster;
@@ -175,6 +186,7 @@ module.exports = {
   syncMembers,
   rosterForBackfill,
   createRosterSyncCoordinator,
+  requireCompleteIdentityCoverage,
   normalizeUsername,
   buildDiscordSyncPeople,
   clearCache,

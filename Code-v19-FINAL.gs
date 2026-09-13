@@ -1,11 +1,11 @@
 // ============================================================
-//  JP ADMIN SHEET + BOT API (v59 - normalized intake role restoration)
+//  JP ADMIN SHEET + BOT API (v60 - verified roster identity)
 //  Safe for a copied/bound spreadsheet and multiple newly-created
 //  Forms. Includes persistent response-tab routing, tracker GIDs,
 //  idempotent daily score inputs, and private onboarding state.
 // ============================================================
 
-const VERSION = 'v59';
+const VERSION = 'v60';
 const MAIL_RECIPIENTS_PER_MESSAGE_LIMIT = 50;
 
 const JOB_SNAPSHOT_PREFIX = 'JP_JOBSNAP_';
@@ -701,6 +701,11 @@ function isProvisionalStudentEmail(value) {
   return /^discord\.\d+@pending\.jp-admin\.invalid$/i.test(normalizeStudentEmail(value));
 }
 
+function isSyntheticStudentEmail(value) {
+  const email = normalizeStudentEmail(value);
+  return isProvisionalStudentEmail(email) || /@discord\.com$/i.test(email) || /\.invalid$/i.test(email);
+}
+
 function ensureBotMap() {
   const ss = getSpreadsheet();
   let map = ss.getSheetByName(CONFIG.SHEETS.botMap);
@@ -768,7 +773,7 @@ function attendanceIdentityColorMap() {
   const emails = sheet.getRange(2, CONFIG.MATRIX.emailCol, rowCount, 1).getValues();
   const colors = sheet.getRange(2, CONFIG.MATRIX.emailCol, rowCount, 1).getBackgrounds();
   for (let i = 0; i < rowCount; i++) {
-    const email = normalizeStudentEmail(emails[i][0]);
+    const email = validStudentProfileEmail(emails[i][0]);
     if (!email) continue;
     const color = normalizeSheetColor(colors[i][0]);
     if (!out[email]) out[email] = [];
@@ -787,8 +792,10 @@ function readBotMap() {
   const byEmail = {};
   const order = [];
   for (let i = 1; i < data.length; i++) {
-    const email = normalizeStudentEmail(data[i][0]);
-    if (!email) continue;
+    const email = validStudentProfileEmail(data[i][0]);
+    const name = String(data[i][1] || '').trim();
+    const phone = validStudentProfilePhone(data[i].length > 7 ? data[i][7] : '');
+    if (!email || !name || !phone) continue;
     const rowColor = normalizeSheetColor(
       backgrounds[i - 1] && backgrounds[i - 1][0] || '#ffffff');
     const attendanceColors = matrixColors[email] || ['#ffffff'];
@@ -805,13 +812,13 @@ function readBotMap() {
     }
     const entry = {
       email: email,
-      name: String(data[i][1]).trim(),
+      name: name,
       username: String(data[i][2]).trim(),
       discordId: normalizeDiscordId(data[i][3]),
       status: String(data[i][4]).trim().toLowerCase(), // '' | hired | left
       region: data[i].length > 5 ? String(data[i][5]).trim() : '',
       subregion: data[i].length > 6 ? String(data[i][6]).trim() : '',
-      phone: data[i].length > 7 ? String(data[i][7]).trim() : '',
+      phone: phone,
       matchSource: data[i].length > 8 ? String(data[i][8]).trim() : '',
       reviewNote: data[i].length > 9 ? String(data[i][9]).trim() : '',
       active: inactiveReasons.length === 0,
@@ -1034,7 +1041,8 @@ function activeAttendanceRoster(roster, guildId) {
   excludedDiscordIds(guildId).forEach(function (id) { excluded[id] = true; });
   return (roster || readBotMap()).filter(function (student) {
     return student.active !== false && student.status !== 'hired' &&
-      student.status !== 'left' && normalizeStudentEmail(student.email) &&
+      student.status !== 'left' && validStudentProfileEmail(student.email) &&
+      validStudentProfilePhone(student.phone) &&
       !(student.discordId && excluded[String(student.discordId)]);
   });
 }
@@ -3519,7 +3527,7 @@ function readAllData() {
   const byEmail = {};
   const order = [];
   for (let i = 1; i < data.length; i++) {
-    const email = normalizeStudentEmail(data[i][cEmail]);
+    const email = validStudentProfileEmail(data[i][cEmail]);
     const name = String(data[i][cName]).trim();
     if (!email || !name) continue;
     const incoming = {
@@ -3596,8 +3604,13 @@ function normalizeStudentProfilePhone(value) {
 
 function validStudentProfileEmail(value) {
   const email = normalizeStudentEmail(value);
-  if (isProvisionalStudentEmail(email)) return '';
+  if (isSyntheticStudentEmail(email)) return '';
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? email : '';
+}
+
+function validStudentProfilePhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length >= 8 && digits.length <= 15 ? digits : '';
 }
 
 function ensureAllDataProfileColumns() {
@@ -3703,6 +3716,7 @@ function enrollmentIdentityRecords() {
   const ss = getSpreadsheet();
   const configuredName = responseSheetName('enrollment');
   const configured = ss.getSheetByName(configuredName);
+  const intake = ss.getSheetByName(intakeResponsesName());
   const candidates = [];
   const seen = {};
   const reserved = {};
@@ -3715,13 +3729,23 @@ function enrollmentIdentityRecords() {
     candidates.push(configured);
     seen[configured.getSheetId()] = true;
   }
+  if (intake && !seen[intake.getSheetId()]) {
+    candidates.push(intake);
+    seen[intake.getSheetId()] = true;
+  }
   ss.getSheets().forEach(function (sheet) {
     if (seen[sheet.getSheetId()] || reserved[sheet.getName()] || sheet.getLastRow() < 2) return;
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
     const emailCol = findHeader(headers, fieldCandidates('enrollment', 'enrollmentEmail', ['Email Address', 'Email']));
     const nameCol = findHeader(headers, fieldCandidates('enrollment', 'name', ['Your Name', 'Full Name', 'Name']));
-    const discordCol = findHeader(headers, fieldCandidates('enrollment', 'discordUsername', ['Discord Username', 'Discord ID', 'username']));
-    if (emailCol !== -1 && nameCol !== -1 && discordCol !== -1) candidates.push(sheet);
+    const phoneCol = findHeader(headers, fieldCandidates('enrollment', 'phone', ['WhatsApp Number', 'Phone', 'Mobile', 'Contact Number']));
+    const usernameCol = findHeader(headers, fieldCandidates('enrollment', 'discordUsername', ['Discord Username', 'Discord Handle', 'username']));
+    const discordIdCol = findHeader(headers, ['Discord ID', 'Discord User ID']);
+    // Unknown legacy/import tabs are safe identity references only when they
+    // contain a real email plus a durable Discord identity, or a name and
+    // phone pair. Operational bot tabs remain excluded through `reserved`.
+    if (emailCol !== -1 && (discordIdCol !== -1 || usernameCol !== -1 ||
+        (nameCol !== -1 && phoneCol !== -1))) candidates.push(sheet);
   });
 
   const byEmail = {};
@@ -3732,26 +3756,37 @@ function enrollmentIdentityRecords() {
     const headers = data[0].map(String);
     const emailCol = findHeader(headers, fieldCandidates('enrollment', 'enrollmentEmail', ['Email Address', 'Email']));
     const nameCol = findHeader(headers, fieldCandidates('enrollment', 'name', ['Your Name', 'Full Name', 'Name']));
-    if (emailCol === -1 || nameCol === -1) return;
-    const discordCol = findHeader(headers, fieldCandidates('enrollment', 'discordUsername', ['Discord Username', 'Discord ID', 'username']));
-    const phoneCol = findHeader(headers, fieldCandidates('enrollment', 'phone', ['WhatsApp Number', 'Phone', 'Mobile']));
+    if (emailCol === -1) return;
+    const usernameCol = findHeader(headers, fieldCandidates('enrollment', 'discordUsername', ['Discord Username', 'Discord Handle', 'username']));
+    const discordIdCol = findHeader(headers, ['Discord ID', 'Discord User ID']);
+    const phoneCol = findHeader(headers, fieldCandidates('enrollment', 'phone', ['WhatsApp Number', 'Phone', 'Mobile', 'Contact Number']));
     const regionCol = findHeader(headers, fieldCandidates('enrollment', 'region', ['Current Region (Division)', 'Region', 'Division', 'Current Location']));
     const subregionCol = findHeader(headers, fieldCandidates('enrollment', 'subregion', ['Current Subregion / Area', 'Subregion', 'Area']));
     sourceTabs.push(sheet.getName());
     for (let i = 1; i < data.length; i++) {
-      const email = normalizeStudentEmail(data[i][emailCol]);
-      const name = String(data[i][nameCol] || '').trim();
-      if (!email || !name) continue;
-      if (byEmail[email] && sheet.getName() !== configuredName) continue;
-      byEmail[email] = {
+      const email = validStudentProfileEmail(data[i][emailCol]);
+      if (!email) continue;
+      const incoming = {
         email: email,
-        name: name,
-        username: discordCol === -1 ? '' : String(data[i][discordCol] || '').trim(),
+        name: nameCol === -1 ? '' : String(data[i][nameCol] || '').trim(),
+        username: usernameCol === -1 ? '' : String(data[i][usernameCol] || '').trim(),
+        discordId: discordIdCol === -1 ? '' : normalizeDiscordId(data[i][discordIdCol]),
         phone: phoneCol === -1 ? '' : String(data[i][phoneCol] || '').trim(),
         region: regionCol === -1 ? '' : String(data[i][regionCol] || '').trim(),
         subregion: subregionCol === -1 ? '' : String(data[i][subregionCol] || '').trim(),
         sourceTab: sheet.getName(),
       };
+      if (!byEmail[email]) {
+        byEmail[email] = incoming;
+        continue;
+      }
+      const current = byEmail[email];
+      ['name', 'username', 'discordId', 'phone', 'region', 'subregion'].forEach(function (key) {
+        if (!current[key] && incoming[key]) current[key] = incoming[key];
+      });
+      if (sheet.getName() === configuredName || sheet.getName() === intakeResponsesName()) {
+        current.sourceTab = sheet.getName();
+      }
     }
   });
   return { records: Object.keys(byEmail).map(function (email) { return byEmail[email]; }), sourceTabs: sourceTabs };
@@ -4109,7 +4144,7 @@ function migrateStudentEmail(oldEmail, newEmail) {
   return { changed: changed };
 }
 
-function chooseRosterCandidate(existingId, corroboratedUsername, uniqueName, usernameOnly) {
+function chooseRosterCandidate(existingId, corroboratedUsername, nameOnly, usernameOnly) {
   const distinct = function (values) {
     return (values || []).filter(function (value, index, list) {
       return value && list.indexOf(value) === index;
@@ -4117,16 +4152,17 @@ function chooseRosterCandidate(existingId, corroboratedUsername, uniqueName, use
   };
   existingId = distinct(existingId);
   corroboratedUsername = distinct(corroboratedUsername);
-  uniqueName = distinct(uniqueName);
+  nameOnly = distinct(nameOnly);
   usernameOnly = distinct(usernameOnly);
   if (existingId.length > 1) return { error: 'Discord ID is attached to multiple emails in old Bot_Map' };
-  if (existingId.length === 1) return { email: existingId[0], source: 'Existing or archived Discord ID' };
+  if (existingId.length === 1) return { email: existingId[0], source: 'Verified Discord ID' };
   if (corroboratedUsername.length > 1) return { error: 'multiple records match username and name' };
   if (corroboratedUsername.length === 1) {
     return { email: corroboratedUsername[0], source: 'Username + matching student name' };
   }
-  if (uniqueName.length > 1) return { error: 'name matches multiple student records' };
-  if (uniqueName.length === 1) return { email: uniqueName[0], source: 'Unique student name' };
+  if (nameOnly.length) {
+    return { error: 'name-only match is not trusted; private email and phone confirmation required' };
+  }
   if (usernameOnly.length) {
     return { error: 'username matched, but student name did not; private data survey required' };
   }
@@ -4169,9 +4205,9 @@ function writeRosterReview(people, activeEntries, unmatched, guildId) {
       String(person.username || ''),
       String(person.displayName || person.globalName || person.nickname || person.username || ''),
       '',
-      previous[4] || values[0] || '',
+      validStudentProfileEmail(previous[4]) || values[0] || '',
       previous[5] || values[1] || '',
-      previous[6] || values[7] || '',
+      validStudentProfilePhone(previous[6]) || values[7] || '',
       previous[7] || values[5] || onboarding.region || '',
       previous[8] || values[6] || '',
       values[8] || previous[9] || '',
@@ -4241,7 +4277,7 @@ function missingStudentProfileFields(reviewRow) {
   const missing = [];
   if (!cleanStudentProfileText(row[5], 100)) missing.push('name');
   if (!validStudentProfileEmail(row[4])) missing.push('email');
-  if (!String(row[6] || '').replace(/\D/g, '')) missing.push('phone');
+  if (!validStudentProfilePhone(row[6])) missing.push('phone');
   if (!cleanStudentProfileText(row[7], 100)) missing.push('region');
   if (/^dhaka$/i.test(cleanStudentProfileText(row[7], 100)) &&
       !cleanStudentProfileText(row[8], 100)) missing.push('subregion');
@@ -4363,6 +4399,7 @@ function syncDiscordRosterCore(people, guildId) {
   const archiveEntriesById = {};
   const existingIdIndex = {};
   const archiveIdIndex = {};
+  const formIdIndex = {};
   const existingUsernameIndex = {};
   const archiveUsernameIndex = {};
   const allUsernameIndex = {};
@@ -4387,9 +4424,10 @@ function syncDiscordRosterCore(people, guildId) {
       addIdentityIndex(nameIndex, key, record.email);
     });
     addIdentityIndex(formUsernameIndex, normalizeIdentityToken(record.username).replace(/\s+/g, ''), record.email);
+    addIdentityIndex(formIdIndex, normalizeDiscordId(record.discordId), record.email);
   });
   existingEntries.forEach(function (entry) {
-    const email = normalizeStudentEmail(entry.values[0]);
+    const email = validStudentProfileEmail(entry.values[0]);
     const discordId = normalizeDiscordId(entry.values[3]);
     if (email) {
       (existingByEmail[email] = existingByEmail[email] || []).push(entry);
@@ -4402,7 +4440,7 @@ function syncDiscordRosterCore(people, guildId) {
     }
   });
   archivedEntries.forEach(function (entry) {
-    const email = normalizeStudentEmail(entry.values[0]);
+    const email = validStudentProfileEmail(entry.values[0]);
     const discordId = normalizeDiscordId(entry.values[3]);
     if (email) {
       (archiveByEmail[email] = archiveByEmail[email] || []).push(entry);
@@ -4418,12 +4456,13 @@ function syncDiscordRosterCore(people, guildId) {
   });
 
   const assignedEmails = {};
+  const activeEmails = {};
   const active = [];
+  const reviewEntries = [];
   const unmatched = [];
   const emailMigrations = [];
   let linkedNow = 0;
   let kept = 0;
-  let provisionalCreated = 0;
 
   people.forEach(function (person) {
     const personNames = [
@@ -4452,29 +4491,28 @@ function syncDiscordRosterCore(people, guildId) {
       ? { email: reviewedEmail, source: 'Supervisor-edited Roster Review' }
       : chooseRosterCandidate(
           indexedEmails(existingIdIndex, [person.discordId])
-            .concat(indexedEmails(archiveIdIndex, [person.discordId])),
+            .concat(indexedEmails(archiveIdIndex, [person.discordId]))
+            .concat(indexedEmails(formIdIndex, [person.discordId])),
           corroboratedUsername,
           nameCandidates,
           usernameCandidates);
-    let provisional = Boolean(choice.error);
-    let email = provisional ? provisionalStudentEmail(person.discordId) : choice.email;
-    let source = provisional
-      ? 'Discord provisional profile'
-      : choice.source === 'Unique student name'
-        ? (allByEmail[email] ? 'All Data unique name' : 'Form unique name')
-        : choice.source;
-    if (provisional) {
-      provisionalCreated++;
+    if (choice.error) {
       unmatched.push(Object.assign({}, person, { reason: choice.error }));
+      return;
+    }
+    const email = validStudentProfileEmail(choice.email);
+    const source = choice.source;
+    if (!email) {
+      unmatched.push(Object.assign({}, person, {
+        reason: 'linked identity has a synthetic or invalid email; private email and phone confirmation required',
+      }));
+      return;
     }
     if (assignedEmails[email]) {
-      provisional = true;
-      email = provisionalStudentEmail(person.discordId);
-      source = 'Discord provisional profile';
-      provisionalCreated++;
       unmatched.push(Object.assign({}, person, {
         reason: 'same student record already matched another Discord member',
       }));
+      return;
     }
     assignedEmails[email] = person.discordId;
     const currentIdentityEntries = existingEntriesById[person.discordId] || [];
@@ -4489,13 +4527,15 @@ function syncDiscordRosterCore(people, guildId) {
     const onboarding = onboardingProfileDefaults(guildId, person.discordId);
     const wasLinked = normalizeDiscordId(currentMerged.values[3]) === person.discordId;
     const oldEmail = normalizeStudentEmail(currentMerged.values[0]);
-    if (oldEmail && oldEmail !== email && isProvisionalStudentEmail(oldEmail)) {
+    if (oldEmail && oldEmail !== email && isSyntheticStudentEmail(oldEmail)) {
       emailMigrations.push({ oldEmail: oldEmail, newEmail: email });
     }
-    const phone = String(review[6] || all.phone || form.phone || merged.values[7] || '').trim();
+    const name = String(review[5] || all.name || form.name || merged.values[1] || '').trim();
+    const phone = validStudentProfilePhone(
+      review[6] || all.phone || form.phone || merged.values[7] || '');
     const row = [
       email,
-      String(review[5] || all.name || form.name || merged.values[1] || person.displayName).trim(),
+      name,
       person.username,
       person.discordId,
       String(merged.values[4] || '').trim(),
@@ -4503,9 +4543,19 @@ function syncDiscordRosterCore(people, guildId) {
       String(review[8] || all.subregion || form.subregion || merged.values[6] || '').trim(),
       phone,
       source,
-      provisional ? choice.error : phone ? '' : 'Missing phone/contact data',
+      !name ? 'Full name required before tracking' : !phone ? 'Valid phone required before tracking' : '',
     ];
+    reviewEntries.push({ values: row, emailBackground: merged.emailBackground });
+    if (!name || !phone) {
+      unmatched.push(Object.assign({}, person, {
+        reason: !name
+          ? 'matched email but full name is missing; private profile confirmation required'
+          : 'matched email but phone is missing or invalid; private profile confirmation required',
+      }));
+      return;
+    }
     active.push({ values: row, emailBackground: merged.emailBackground });
+    activeEmails[email] = true;
     if (wasLinked) kept++;
     else linkedNow++;
   });
@@ -4513,33 +4563,7 @@ function syncDiscordRosterCore(people, guildId) {
   // Roster Review is the complete Discord-primary intake list, including
   // unmatched members. Write it before the Bot_Map replacement safety gate so
   // a new cohort can collect private profiles even when no one matches yet.
-  const rosterReview = writeRosterReview(people, active, unmatched, guildId);
-  let skipReason = '';
-  if (people.length && !active.length) {
-    skipReason = 'No Discord member could be matched; Bot_Map was left unchanged';
-  } else if (people.length >= 8 && active.length / people.length < 0.25) {
-    skipReason = 'Less than 25% of Discord students matched identity data; Bot_Map was left unchanged';
-  }
-  if (skipReason) {
-    return {
-      activeRows: existingEntries.length,
-      proposedActiveRows: active.length,
-      linkedNow: 0,
-      kept: 0,
-      unmatched: unmatched,
-      duplicatesMerged: 0,
-      archived: 0,
-      allDataRows: allData.length,
-      enrollmentRows: enrollment.records.length,
-      enrollmentSourceTabs: enrollment.sourceTabs,
-      missingPhone: active.filter(function (entry) { return !entry.values[7]; }).length,
-      matrixUpdates: {},
-      rosterReview: rosterReview,
-      archiveIdentityRowsRead: archivedEntries.length,
-      replacementSkipped: true,
-      skipReason: skipReason,
-    };
-  }
+  const rosterReview = writeRosterReview(people, reviewEntries, unmatched, guildId);
 
   const archiveEntries = [];
   let duplicatesMerged = Object.keys(existingByEmail).reduce(function (count, email) {
@@ -4547,7 +4571,7 @@ function syncDiscordRosterCore(people, guildId) {
   }, 0);
   existingEntries.forEach(function (entry) {
     const email = normalizeStudentEmail(entry.values[0]);
-    if (assignedEmails[email]) {
+    if (activeEmails[email]) {
       const rows = existingByEmail[email] || [];
       if (rows.length > 1) {
         archiveEntries.push({ values: entry.values, reason: 'duplicate row merged during Discord sync' });
@@ -4604,18 +4628,25 @@ function syncDiscordRosterCore(people, guildId) {
     allDataRows: allData.length,
     enrollmentRows: enrollment.records.length,
     enrollmentSourceTabs: enrollment.sourceTabs,
-    missingPhone: active.filter(function (entry) { return !entry.values[7]; }).length,
+    missingPhone: unmatched.filter(function (entry) {
+      return /phone/i.test(String(entry.reason || ''));
+    }).length,
     matrixUpdates: matrixUpdates,
     statusStyles: statusStyles,
     allDataSync: allDataSync,
     rosterReview: rosterReview,
     archiveIdentityRowsRead: archivedEntries.length,
-    provisionalCreated: provisionalCreated,
+    identityPending: unmatched.length,
+    provisionalCreated: 0,
   };
 }
 
 function appendToBotMap(email, name, username, discordId, phone, source) {
-  email = normalizeStudentEmail(email);
+  email = validStudentProfileEmail(email);
+  phone = validStudentProfilePhone(phone);
+  if (!email || !phone || !String(name || '').trim()) {
+    throw new Error('A real email, full name, and valid phone are required before tracking');
+  }
   const map = ensureBotMap();
   const data = map.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
@@ -4655,7 +4686,8 @@ function appendToAttendance(email, name, phone) {
   return result;
 }
 
-// auto-match by display name; report ambiguous ones
+// Name-only matching is advisory. Discord display names are not verified
+// identities, so this audit never writes Bot_Map or Attendance by name alone.
 function matchMissing(people) {
   const allData = readAllData();
   const mapped = {};
@@ -4665,24 +4697,14 @@ function matchMissing(people) {
   const added = [], manual = [];
   for (const p of people) {
     const norm = normName(p.displayName);
-    const exact = available.filter(function (a) { return a.norm === norm; });
-    if (norm && exact.length === 1) {
-      const a = exact[0];
-      appendToBotMap(a.email, a.name, p.username, p.discordId, a.phone, 'All Data exact name');
-      appendToAttendance(a.email, a.name, a.phone);
-      mapped[a.email] = true;
-      available.splice(available.indexOf(a), 1);
-      added.push({ name: a.name, email: a.email, username: p.username });
-    } else {
-      // suggest partial candidates to help the human decide
-      const cands = norm
-        ? available.filter(function (a) {
-            return a.norm.indexOf(norm) !== -1 || norm.indexOf(a.norm) !== -1;
-          }).slice(0, 3).map(function (a) { return a.name + ' <' + a.email + '>'; })
-        : [];
-      manual.push({ username: p.username, displayName: p.displayName,
-                    discordId: p.discordId, candidates: cands });
-    }
+    const cands = norm
+      ? available.filter(function (a) {
+          return a.norm === norm || a.norm.indexOf(norm) !== -1 || norm.indexOf(a.norm) !== -1;
+        }).slice(0, 3).map(function (a) { return a.name + ' <' + a.email + '>'; })
+      : [];
+    manual.push({ username: p.username, displayName: p.displayName,
+                  discordId: p.discordId, candidates: cands,
+                  reason: 'Discord display names are advisory; confirm real email and phone' });
   }
   // ---- reverse direction: All Data students with no Discord presence ----
   const finalMap = {};
@@ -4702,10 +4724,10 @@ function matchMissing(people) {
   return { added: added, manual: manual, missingFromDiscord: missingFromDiscord };
 }
 
-// manual link: email from All Data (fallback: displayName as name)
+// Manual link: require a complete trusted record from a recognized Sheet tab.
 function addStudent(email, discordId, username, displayName) {
-  email = String(email || '').trim().toLowerCase();
-  if (!email || email.indexOf('@') === -1) return { error: 'invalid email' };
+  email = validStudentProfileEmail(email);
+  if (!email) return { error: 'A real student email is required; generated Discord-domain emails are rejected' };
   const rec = readAllData().find(function (a) { return a.email === email; });
   const form = enrollmentIdentityRecords().records.find(function (a) {
     return a.email === email;
@@ -4713,9 +4735,12 @@ function addStudent(email, discordId, username, displayName) {
   const archived = mergeExistingBotMapRows(readBotMapArchiveEntries().filter(function (entry) {
     return normalizeStudentEmail(entry.values[0]) === email;
   }));
-  const name = (rec && rec.name) || form.name || archived.values[1] ||
-    String(displayName || username || email);
-  const phone = (rec && rec.phone) || form.phone || archived.values[7] || '';
+  const name = (rec && rec.name) || form.name || archived.values[1] || '';
+  const phone = validStudentProfilePhone(
+    (rec && rec.phone) || form.phone || archived.values[7] || '');
+  if (!name || !phone) {
+    return { error: 'The matched Sheet record needs a full name and valid phone; use !editprofile for this student' };
+  }
   const mapResult = appendToBotMap(email, name, username, discordId, phone, 'Manual supervisor link');
   const map = ensureBotMap();
   const data = map.getDataRange().getValues();
@@ -5211,7 +5236,7 @@ function submitStudentProfile(body) {
       return student.discordId === discordId;
     }) || null;
     const reviewEmail = validStudentProfileEmail(reviewRow[4]);
-    const linkedEmail = linkedById && !isProvisionalStudentEmail(linkedById.email)
+    const linkedEmail = linkedById && !isSyntheticStudentEmail(linkedById.email)
       ? linkedById.email
       : '';
     const email = adminOverride
@@ -5227,6 +5252,17 @@ function submitStudentProfile(body) {
     const allRecord = readAllData().find(function (student) {
       return student.email === email;
     }) || {};
+    const legacyRecord = enrollmentIdentityRecords().records.find(function (student) {
+      return student.email === email;
+    }) || {};
+    const referenceRecord = allRecord.email ? allRecord : legacyRecord;
+    const referencePhone = validStudentProfilePhone(referenceRecord.phone);
+    if (!adminOverride && referencePhone && suppliedPhone &&
+        referencePhone !== validStudentProfilePhone(suppliedPhone)) {
+      return {
+        error: 'That email and phone do not match the existing Sheet record; ask a mentor to verify it privately',
+      };
+    }
     const archiveRows = readBotMapArchiveEntries().filter(function (entry) {
       return normalizeStudentEmail(entry.values[0]) === email;
     });
@@ -5238,7 +5274,7 @@ function submitStudentProfile(body) {
     const previousEmail = normalizeStudentEmail(
       (linkedById && linkedById.email) || reviewEmail || '');
     if (previousEmail && previousEmail !== email &&
-        (adminOverride || isProvisionalStudentEmail(previousEmail))) {
+        (adminOverride || isSyntheticStudentEmail(previousEmail))) {
       migrateStudentEmail(previousEmail, email);
     }
 
@@ -5246,17 +5282,17 @@ function submitStudentProfile(body) {
       email: email,
       name: String(adminOverride
         ? suppliedName
-        : allRecord.name || (linkedById && linkedById.name) || reviewRow[5] || suppliedName).trim(),
-      phone: String(adminOverride
+        : referenceRecord.name || (linkedById && linkedById.name) || reviewRow[5] || suppliedName).trim(),
+      phone: validStudentProfilePhone(adminOverride
         ? suppliedPhone
-        : allRecord.phone || (linkedById && linkedById.phone) || reviewRow[6] || suppliedPhone).trim(),
+        : referenceRecord.phone || (linkedById && linkedById.phone) || reviewRow[6] || suppliedPhone),
       region: String(adminOverride
         ? suppliedRegion
-        : allRecord.region || (linkedById && linkedById.region) || reviewRow[7] ||
+        : referenceRecord.region || (linkedById && linkedById.region) || reviewRow[7] ||
           suppliedRegion || onboardingDefaults.region || '').trim(),
       subregion: String(adminOverride
         ? suppliedSubregion
-        : allRecord.subregion || (linkedById && linkedById.subregion) ||
+        : referenceRecord.subregion || (linkedById && linkedById.subregion) ||
           reviewRow[8] || suppliedSubregion).trim(),
       username: cleanStudentProfileText(body.username, 100),
       discordId: discordId,
@@ -5271,7 +5307,7 @@ function submitStudentProfile(body) {
     const missing = [];
     if (!profile.name) missing.push('name');
     if (!profile.email) missing.push('email');
-    if (!profile.phone) missing.push('phone');
+    if (!validStudentProfilePhone(profile.phone)) missing.push('phone');
     if (!profile.region) missing.push('region');
     if (/^dhaka$/i.test(profile.region) && !profile.subregion) missing.push('subregion');
     if (missing.length) {
@@ -5284,20 +5320,16 @@ function submitStudentProfile(body) {
     if (!adminOverride && suppliedEmail && suppliedEmail !== email) {
       reviewNotes.push('Submitted email "' + suppliedEmail + '" differs from the Discord-linked email; linked value retained');
     }
-    if (!adminOverride && allRecord.name && suppliedName && normName(allRecord.name) !== normName(suppliedName)) {
-      reviewNotes.push('Submitted name "' + suppliedName + '" differs from All Data; existing value retained');
+    if (!adminOverride && referenceRecord.name && suppliedName && normName(referenceRecord.name) !== normName(suppliedName)) {
+      reviewNotes.push('Submitted name "' + suppliedName + '" differs from the existing Sheet record; existing value retained');
     }
-    if (!adminOverride && allRecord.phone && suppliedPhone &&
-        String(allRecord.phone).replace(/\D/g, '') !== String(suppliedPhone).replace(/\D/g, '')) {
-      reviewNotes.push('Submitted phone "' + suppliedPhone + '" differs from All Data; existing value retained');
+    if (!adminOverride && referenceRecord.region && suppliedRegion &&
+        normName(referenceRecord.region) !== normName(suppliedRegion)) {
+      reviewNotes.push('Submitted region "' + suppliedRegion + '" differs from the existing Sheet record; existing value retained');
     }
-    if (!adminOverride && allRecord.region && suppliedRegion &&
-        normName(allRecord.region) !== normName(suppliedRegion)) {
-      reviewNotes.push('Submitted region "' + suppliedRegion + '" differs from All Data; existing value retained');
-    }
-    if (!adminOverride && allRecord.subregion && suppliedSubregion &&
-        normName(allRecord.subregion) !== normName(suppliedSubregion)) {
-      reviewNotes.push('Submitted subregion "' + suppliedSubregion + '" differs from All Data; existing value retained');
+    if (!adminOverride && referenceRecord.subregion && suppliedSubregion &&
+        normName(referenceRecord.subregion) !== normName(suppliedSubregion)) {
+      reviewNotes.push('Submitted subregion "' + suppliedSubregion + '" differs from the existing Sheet record; existing value retained');
     }
 
     const allDataResult = upsertAllDataFromStudentProfile(profile, adminOverride);

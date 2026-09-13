@@ -4,9 +4,18 @@ const {
   buildDiscordSyncPeople,
   createRosterSyncCoordinator,
   isExcluded,
+  requireCompleteIdentityCoverage,
   rosterForBackfill,
   setRosterSnapshot,
 } = require('./roster');
+
+test('public cohort reports cannot silently omit unresolved current students', () => {
+  assert.deepEqual(requireCompleteIdentityCoverage({ unmatched: [] }, 'Attendance'), { unmatched: [] });
+  assert.throws(
+    () => requireCompleteIdentityCoverage({ unmatched: [{ discordId: '1' }] }, 'Attendance'),
+    /Attendance paused: 1 current student profile.*real email and valid phone/,
+  );
+});
 
 const cohort = { name: 'TEST', guildId: 'guild-1', supervisorIds: ['supervisor-1'] };
 
